@@ -49,6 +49,11 @@ VirtualChannel::VirtualChannel()
 void
 VirtualChannel::set_idle(Tick curTime)
 {
+    // Record how long this VC was occupied (ACTIVE → IDLE)
+    if (m_vc_state.first == ACTIVE_ && curTime > m_active_start) {
+        m_last_occupy_duration = curTime - m_active_start;
+    }
+
     m_vc_state.first = IDLE_;
     m_vc_state.second = curTime;
     m_enqueue_time = Tick(INFINITE_);
@@ -62,6 +67,7 @@ VirtualChannel::set_active(Tick curTime)
     m_vc_state.first = ACTIVE_;
     m_vc_state.second = curTime;
     m_enqueue_time = curTime;
+    m_active_start = curTime;  // record when ACTIVE began
 }
 
 bool

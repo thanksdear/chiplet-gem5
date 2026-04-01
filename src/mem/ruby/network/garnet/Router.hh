@@ -162,6 +162,24 @@ class Router : public BasicRouter, public Consumer
     statistics::Scalar m_sw_output_arbiter_activity;
 
     statistics::Scalar m_crossbar_activity;
+
+    // ---------------------------------------------------------------
+    // Interposer VC monitoring
+    // m_is_interposer is set in init() by detecting a "Down" outport.
+    // InterposerStats uses the new statistics::Group API:
+    //   - ADD_STAT auto-registers each stat at construction time
+    //   - port_vc_active_cycles.init() is called in Router::init()
+    //     after ports are connected (init() runs before regStats())
+    // ---------------------------------------------------------------
+    bool m_is_interposer;
+
+    struct InterposerStats : public statistics::Group
+    {
+        InterposerStats(statistics::Group *parent);
+
+        statistics::Scalar vc_active_cycles;
+        statistics::Vector port_vc_active_cycles;
+    } interposerStats;
 };
 
 } // namespace garnet

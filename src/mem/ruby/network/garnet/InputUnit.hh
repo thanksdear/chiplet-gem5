@@ -155,6 +155,47 @@ class InputUnit : public Consumer
     uint32_t functionalWrite(Packet *pkt);
     void resetStats();
 
+    // Returns number of VCs currently in ACTIVE_ state on this input port
+    int get_num_active_vcs() {
+        int count = 0;
+        for (auto &vc : virtualChannels)
+            if (vc.get_state() == ACTIVE_) count++;
+        return count;
+    }
+
+    int get_num_vcs() { return virtualChannels.size(); }
+
+    // VC occupancy duration queries
+    VC_state_type get_vc_state(int vc) { return virtualChannels[vc].get_state(); }
+    Tick get_vc_active_start(int vc) { return virtualChannels[vc].get_active_start(); }
+    Tick get_vc_last_duration(int vc) { return virtualChannels[vc].get_last_occupy_duration(); }
+
+    // VC queue stall detection: returns how many cycles the queue size
+    // has been unchanged for each VC. Call sampleVcStall() every wakeup.
+    void sampleVcStall() {
+        int num_vcs = virtualChannels.size();
+        if (m_prev_vc_size.empty()) {
+            m_prev_vc_size.resize(num_vcs, 0);
+            m_vc_stall_cycles.resize(num_vcs, 0);
+            m_vc_max_stall.resize(num_vcs, 0);
+        }
+        for (int v = 0; v < num_vcs; v++) {
+            int cur_size = virtualChannels[v].getBufferSize();
+            if (cur_size > 0 && cur_size == m_prev_vc_size[v]) {
+                m_vc_stall_cycles[v]++;
+            } else {
+                // queue changed or empty, reset
+                if (m_vc_stall_cycles[v] > m_vc_max_stall[v])
+                    m_vc_max_stall[v] = m_vc_stall_cycles[v];
+                m_vc_stall_cycles[v] = 0;
+            }
+            m_prev_vc_size[v] = cur_size;
+        }
+    }
+    int getVcBufferSize(int vc) { return virtualChannels[vc].getBufferSize(); }
+    Tick getVcStallCycles(int vc) { return m_vc_stall_cycles.empty() ? 0 : m_vc_stall_cycles[vc]; }
+    Tick getVcMaxStall(int vc) { return m_vc_max_stall.empty() ? 0 : m_vc_max_stall[vc]; }
+
   private:
     Router *m_router;
     int m_id;
@@ -170,6 +211,11 @@ class InputUnit : public Consumer
     // Statistical variables
     std::vector<double> m_num_buffer_writes;
     std::vector<double> m_num_buffer_reads;
+
+    // VC stall detection
+    std::vector<int> m_prev_vc_size;       // previous queue size per VC
+    std::vector<Tick> m_vc_stall_cycles;   // current stall streak per VC
+    std::vector<Tick> m_vc_max_stall;      // max stall streak per VC
 };
 
 } // namespace garnet

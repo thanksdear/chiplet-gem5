@@ -177,6 +177,7 @@ RoutingUnit::outportCompute(RouteInfo route, int inport,
         // all with output port direction = "Local"
         // Get exact outport id from table
         outport = lookupRoutingTable(route.vnet, route.net_dest);
+
         return outport;
     }
 
@@ -260,14 +261,112 @@ RoutingUnit::outportComputeXY(RouteInfo route,
     return m_outports_dirn2idx[outport_dirn];
 }
 
-// Template for implementing custom routing algorithm
-// using port directions. (Example adaptive)
+// Composable routing for chiplet-based systems (ISCA 2018)
+// - Intra-chiplet traffic  : XY routing (local chiplet coordinates)
+// - Interposer / ingress / egress : routing table
+// - Boundary router turn restriction: prohibit Down(in) -> Down(out)
 int
 RoutingUnit::outportComputeCustom(RouteInfo route,
                                  int inport,
                                  PortDirection inport_dirn)
 {
-    panic("%s placeholder executed", __FUNCTION__);
+    static const int CHIPLET_COLS        = 4;
+    static const int ROUTERS_PER_CHIPLET = 16; // 4x4
+    static const int NUM_CHIPLET_ROUTERS = 64; // 4 chiplets x 16
+
+    int my_id   = m_router->get_id();
+    int dest_id = route.dest_router;
+
+    // 物理方向: interposer 在下，chiplet 在上
+    // interposer 路由器有 "Up" 出口（向上发往 chiplet）
+    // chiplet 边界路由器有 "Down" 出口（向下发往 interposer）
+    bool is_interposer       = (m_outports_dirn2idx.count("Up")   > 0);
+    bool is_chiplet_boundary = (m_outports_dirn2idx.count("Down") > 0);
+
+
+    // ------------------------------------------------------------------
+    // Case 1: Interposer router -> routing table
+    // ------------------------------------------------------------------
+    if (is_interposer) {
+        return lookupRoutingTable(route.vnet, route.net_dest);
+    }
+
+    // ------------------------------------------------------------------
+    // Case 2: Chiplet boundary router
+    // ------------------------------------------------------------------
+    if (is_chiplet_boundary) {
+        int my_chiplet  = my_id / ROUTERS_PER_CHIPLET;
+        bool same_chiplet = (dest_id < NUM_CHIPLET_ROUTERS) &&
+                            (dest_id / ROUTERS_PER_CHIPLET == my_chiplet);
+
+
+        // 2a: destination on same chiplet -> intra-chiplet XY
+        if (same_chiplet) {
+            int my_local   = my_id   % ROUTERS_PER_CHIPLET;
+            int dest_local = dest_id % ROUTERS_PER_CHIPLET;
+            int my_lx   = my_local   % CHIPLET_COLS;
+            int my_ly   = my_local   / CHIPLET_COLS;
+            int dest_lx = dest_local % CHIPLET_COLS;
+            int dest_ly = dest_local / CHIPLET_COLS;
+
+            PortDirection dirn;
+            if (dest_lx != my_lx)
+                dirn = (dest_lx > my_lx) ? "East" : "West";
+            else
+                dirn = (dest_ly > my_ly) ? "South" : "North";
+            return m_outports_dirn2idx.at(dirn);
+        }
+
+        // 2b: destination on another chiplet (egress/ingress path)
+        //     Turn restriction: Down(in) -> Down(out) is PROHIBITED
+        //     to break cyclic resource dependencies across chiplets.
+        if (inport_dirn == "Down") {
+            // Packet arrived from interposer (从下方上来); must NOT go back down.
+            // Use routing table to reach destination within this chiplet.
+            return lookupRoutingTable(route.vnet, route.net_dest);
+        }
+        // Packet came from within the chiplet: send down to interposer.
+        return m_outports_dirn2idx.at("Down");
+    }
+
+    // ------------------------------------------------------------------
+    // Case 3: Normal intra-chiplet router -> XY routing
+    // ------------------------------------------------------------------
+    int my_chiplet  = my_id / ROUTERS_PER_CHIPLET;
+    bool same_chiplet = (dest_id < NUM_CHIPLET_ROUTERS) &&
+                        (dest_id / ROUTERS_PER_CHIPLET == my_chiplet);
+
+    if (same_chiplet) {
+        // Intra-chiplet XY
+        int my_local   = my_id   % ROUTERS_PER_CHIPLET;
+        int dest_local = dest_id % ROUTERS_PER_CHIPLET;
+        int my_lx   = my_local   % CHIPLET_COLS;
+        int my_ly   = my_local   / CHIPLET_COLS;
+        int dest_lx = dest_local % CHIPLET_COLS;
+        int dest_ly = dest_local / CHIPLET_COLS;
+
+        PortDirection dirn;
+        if (dest_lx != my_lx)
+            dirn = (dest_lx > my_lx) ? "East" : "West";
+        else
+            dirn = (dest_ly > my_ly) ? "South" : "North";
+        return m_outports_dirn2idx.at(dirn);
+    }
+
+    // Inter-chiplet: XY toward nearest corner boundary router,
+    // then the boundary router handles the Down egress (toward interposer).
+    int my_local = my_id % ROUTERS_PER_CHIPLET;
+    int my_lx    = my_local % CHIPLET_COLS;
+    int my_ly    = my_local / CHIPLET_COLS;
+    int tgt_lx   = (my_lx < CHIPLET_COLS / 2) ? 0 : (CHIPLET_COLS - 1);
+    int tgt_ly   = (my_ly < CHIPLET_COLS / 2) ? 0 : (CHIPLET_COLS - 1);
+
+    PortDirection dirn;
+    if (tgt_lx != my_lx)
+        dirn = (tgt_lx > my_lx) ? "East" : "West";
+    else
+        dirn = (tgt_ly > my_ly) ? "South" : "North";
+    return m_outports_dirn2idx.at(dirn);
 }
 
 } // namespace garnet

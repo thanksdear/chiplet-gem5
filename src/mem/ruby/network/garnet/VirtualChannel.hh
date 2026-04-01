@@ -95,7 +95,13 @@ class VirtualChannel
         return inputBuffer.getTopFlit();
     }
 
+    inline int getBufferSize() { return inputBuffer.getSize(); }
+
     uint32_t functionalWrite(Packet *pkt);
+
+    // VC occupancy duration tracking
+    Tick get_active_start() const { return m_active_start; }
+    Tick get_last_occupy_duration() const { return m_last_occupy_duration; }
 
   private:
     flitBuffer inputBuffer;
@@ -103,6 +109,9 @@ class VirtualChannel
     int m_output_port;
     Tick m_enqueue_time;
     int m_output_vc;
+
+    Tick m_active_start{0};          // when this VC became ACTIVE
+    Tick m_last_occupy_duration{0};  // duration of last ACTIVE→IDLE span
 };
 
 } // namespace garnet

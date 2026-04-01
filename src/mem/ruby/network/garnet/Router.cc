@@ -38,6 +38,7 @@
 #include "mem/ruby/network/garnet/InputUnit.hh"
 #include "mem/ruby/network/garnet/NetworkLink.hh"
 #include "mem/ruby/network/garnet/OutputUnit.hh"
+#include "sim/sim_exit.hh"
 
 namespace gem5
 {
@@ -53,11 +54,22 @@ Router::Router(const Params &p)
     m_virtual_networks(p.virt_nets), m_vc_per_vnet(p.vcs_per_vnet),
     m_num_vcs(m_virtual_networks * m_vc_per_vnet), m_bit_width(p.width),
     m_network_ptr(nullptr), routingUnit(this), switchAllocator(this),
-    crossbarSwitch(this)
+    crossbarSwitch(this), m_is_interposer(false),
+    interposerStats(this)   // 传 this 作为父 Group，自动建立层级关系
 {
     m_input_unit.clear();
     m_output_unit.clear();
 }
+
+// InterposerStats 构造函数：ADD_STAT 在初始化列表里完成注册，不需要 regStats()
+Router::InterposerStats::InterposerStats(statistics::Group *parent)
+    : statistics::Group(parent, "interposer"),
+      ADD_STAT(vc_active_cycles, statistics::units::Cycle::get(),
+               "Total VC-cycles: sum of ACTIVE_ input VCs each wakeup "
+               "(interposer routers only)"),
+      ADD_STAT(port_vc_active_cycles, statistics::units::Cycle::get(),
+               "Per-input-port VC-cycles (interposer routers only)")
+{}
 
 void
 Router::init()
@@ -66,6 +78,23 @@ Router::init()
 
     switchAllocator.init();
     crossbarSwitch.init();
+
+    // Detect interposer router: any output port with direction "Up"
+    // (interposer 向上发往 chiplet) marks this as an interposer node.
+    m_is_interposer = false;
+    for (auto &ou : m_output_unit) {
+        if (ou->get_direction() == "Up") {
+            m_is_interposer = true;
+            break;
+        }
+    }
+
+    // Vector stats need a runtime size; set it here after ports are connected.
+    // Also apply nozero so non-interposer routers don't clutter stats.txt.
+    interposerStats.vc_active_cycles.flags(statistics::nozero);
+    interposerStats.port_vc_active_cycles
+        .init(m_input_unit.size())
+        .flags(statistics::nozero);
 }
 
 void
@@ -94,6 +123,40 @@ Router::wakeup()
 
     // Switch Traversal
     crossbarSwitch.wakeup();
+
+    // ---------------------------------------------------------------
+    // Interposer VC monitoring: sample active VCs every wakeup cycle
+    // ---------------------------------------------------------------
+    if (m_is_interposer) {
+        for (int i = 0; i < (int)m_input_unit.size(); i++) {
+            int active = m_input_unit[i]->get_num_active_vcs();
+            interposerStats.vc_active_cycles += active;
+            interposerStats.port_vc_active_cycles[i] += active;
+            // Only sample stall on "Up" input ports (TSV from chiplet)
+            if (m_input_unit[i]->get_direction() == "Up") {
+                m_input_unit[i]->sampleVcStall();
+
+                // Deadlock early exit: if any VC stalls beyond threshold
+                static const Tick STALL_THRESHOLD = 10000;
+                int num_vcs = m_input_unit[i]->get_num_vcs();
+                for (int v = 0; v < num_vcs; v++) {
+                    if (m_input_unit[i]->getVcStallCycles(v)
+                            >= STALL_THRESHOLD) {
+                        std::cerr << "\n[DEADLOCK DETECTED] Router "
+                                  << m_id << " port" << i << "(Up) vc"
+                                  << v << " stalled for "
+                                  << m_input_unit[i]->getVcStallCycles(v)
+                                  << " cycles (threshold="
+                                  << STALL_THRESHOLD << ")\n";
+                        // Trigger normal stats dump before exit
+                        exitSimLoop("Deadlock detected: interposer VC "
+                                    "queue stalled", 1);
+                        return;
+                    }
+                }
+            }
+        }
+    }
 }
 
 void
@@ -216,6 +279,7 @@ Router::regStats()
         .name(name() + ".sw_output_arbiter_activity")
         .flags(statistics::nozero)
     ;
+
 }
 
 void
@@ -232,6 +296,44 @@ Router::collateStats()
     m_sw_output_arbiter_activity =
         switchAllocator.get_output_arbiter_activity();
     m_crossbar_activity = crossbarSwitch.get_crossbar_activity();
+
+    // Print per-port VC utilisation summary for interposer routers
+    if (m_is_interposer) {
+        int total_in_vcs = 0;
+        for (int i = 0; i < (int)m_input_unit.size(); i++)
+            total_in_vcs += m_input_unit[i]->get_num_vcs();
+
+        std::cout << "[Interposer VC] Router " << m_id
+                  << "  total_vc_active_cycles="
+                  << interposerStats.vc_active_cycles.value()
+                  << "  ports=" << m_input_unit.size()
+                  << "  total_in_vcs=" << total_in_vcs
+                  << std::endl;
+
+        for (int i = 0; i < (int)m_input_unit.size(); i++) {
+            // Only print detail for "Up" ports (TSV from chiplet)
+            if (m_input_unit[i]->get_direction() != "Up")
+                continue;
+
+            std::cout << "  port" << i << "(Up)"
+                      << "  vc_active_cycles="
+                      << interposerStats.port_vc_active_cycles[i].value();
+
+            int num_vcs = m_input_unit[i]->get_num_vcs();
+            for (int v = 0; v < num_vcs; v++) {
+                Tick cur_stall = m_input_unit[i]->getVcStallCycles(v);
+                Tick max_stall = m_input_unit[i]->getVcMaxStall(v);
+                int buf_size = m_input_unit[i]->getVcBufferSize(v);
+                if (cur_stall > 0 || max_stall > 0) {
+                    std::cout << "  vc" << v
+                              << "[sz=" << buf_size
+                              << ",stall=" << cur_stall
+                              << ",max=" << max_stall << "]";
+                }
+            }
+            std::cout << std::endl;
+        }
+    }
 }
 
 void
