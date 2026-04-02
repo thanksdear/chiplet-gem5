@@ -32,6 +32,8 @@
 
 #include "mem/ruby/network/garnet/Router.hh"
 
+#include <fstream>
+
 #include "debug/RubyNetwork.hh"
 #include "mem/ruby/network/garnet/CreditLink.hh"
 #include "mem/ruby/network/garnet/GarnetNetwork.hh"
@@ -142,12 +144,23 @@ Router::wakeup()
                 for (int v = 0; v < num_vcs; v++) {
                     if (m_input_unit[i]->getVcStallCycles(v)
                             >= STALL_THRESHOLD) {
-                        std::cerr << "\n[DEADLOCK DETECTED] Router "
-                                  << m_id << " port" << i << "(Up) vc"
-                                  << v << " stalled for "
-                                  << m_input_unit[i]->getVcStallCycles(v)
-                                  << " cycles (threshold="
-                                  << STALL_THRESHOLD << ")\n";
+                        // Write deadlock info to log file
+                        {
+                            std::ofstream logf("m5out/deadlock.log",
+                                               std::ios::app);
+                            logf << "[DEADLOCK DETECTED] tick="
+                                 << curTick()
+                                 << " Router " << m_id
+                                 << " port" << i << "(Up) vc" << v
+                                 << " sz="
+                                 << m_input_unit[i]->getVcBufferSize(v)
+                                 << " stall="
+                                 << m_input_unit[i]->getVcStallCycles(v)
+                                 << " cycles (threshold="
+                                 << STALL_THRESHOLD << ")"
+                                 << std::endl;
+                            logf.close();
+                        }
                         // Trigger normal stats dump before exit
                         exitSimLoop("Deadlock detected: interposer VC "
                                     "queue stalled", 1);
