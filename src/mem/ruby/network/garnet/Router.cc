@@ -33,6 +33,7 @@
 #include "mem/ruby/network/garnet/Router.hh"
 
 #include <fstream>
+#include <iomanip>
 
 #include "debug/RubyNetwork.hh"
 #include "mem/ruby/network/garnet/CreditLink.hh"
@@ -40,6 +41,7 @@
 #include "mem/ruby/network/garnet/InputUnit.hh"
 #include "mem/ruby/network/garnet/NetworkLink.hh"
 #include "mem/ruby/network/garnet/OutputUnit.hh"
+#include "mem/ruby/network/garnet/EscapeBuffer.hh"
 #include "sim/sim_exit.hh"
 
 namespace gem5
@@ -91,6 +93,87 @@ Router::init()
         }
     }
 
+    // Initialize health monitors for Up output ports on interposer routers
+    if (m_is_interposer) {
+        // Convert cycle-based threshold to ticks
+        Tick stall_threshold =
+            m_network_ptr->getInterposerStallThreshold() * clockPeriod();
+        if (m_id == 64) {
+            std::cout << "[DEBUG] Router 64: stall_threshold_cycles="
+                      << m_network_ptr->getInterposerStallThreshold()
+                      << " clockPeriod=" << clockPeriod()
+                      << " stall_threshold_ticks=" << stall_threshold
+                      << std::endl;
+        }
+        for (auto &ou : m_output_unit) {
+            if (ou->get_direction() == "Up") {
+                // Only count vnet 2 (data) VCs for health monitoring
+                // vnet 0/1 are 1-flit control packets, always flowing
+                int data_vnet = 2;
+                int vc_base = data_vnet * ou->getVcsPerVnet();
+                int vc_end = vc_base + ou->getVcsPerVnet();
+                ou->initHealthMonitor(stall_threshold,
+                                      vc_base, vc_end);
+            }
+        }
+    }
+
+    // Compute chiplet ID and build peer list for health propagation
+    // Interposer routers 64-79: every 4 routers belong to one chiplet
+    //   C0: 64-67, C1: 68-71, C2: 72-75, C3: 76-79
+    if (m_is_interposer) {
+        int base_interposer_id = 64; // first interposer router ID
+        int routers_per_chiplet = 4;
+        m_chiplet_id = (m_id - base_interposer_id) / routers_per_chiplet;
+
+        // Build peer list (deferred to after all routers are created)
+        // We do this by iterating all routers in the network
+        int chiplet_start = base_interposer_id
+                            + m_chiplet_id * routers_per_chiplet;
+        int chiplet_end = chiplet_start + routers_per_chiplet;
+        for (auto *r : m_network_ptr->getRouters()) {
+            int rid = r->get_id();
+            if (rid >= chiplet_start && rid < chiplet_end && rid != m_id) {
+                m_chiplet_peers.push_back(r);
+            }
+        }
+
+        // Build direct neighbor list by matching outport links
+        // to other interposer routers' input links
+        // Note: use ID range (64-79) instead of isInterposer() because
+        // other routers' init() may not have run yet.
+        for (int p = 0; p < (int)m_output_unit.size(); p++) {
+            std::string dir = m_output_unit[p]->get_direction();
+            if (dir == "East" || dir == "West" ||
+                dir == "North" || dir == "South") {
+                NetworkLink *link = m_output_unit[p]->get_out_link();
+                for (auto *r : m_network_ptr->getRouters()) {
+                    int rid = r->get_id();
+                    if (rid < base_interposer_id ||
+                        rid >= base_interposer_id + 16 ||
+                        rid == m_id)
+                        continue;
+                    for (int ip = 0; ip < r->get_num_inports(); ip++) {
+                        if (r->getInputUnit(ip)->get_in_link() == link) {
+                            m_direct_neighbors.push_back(r);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Create escape buffers for "Down" input ports (chiplet → interposer)
+    if (m_is_interposer) {
+        int buf_depth = m_network_ptr->getBuffersPerDataVC();
+        for (int i = 0; i < (int)m_input_unit.size(); i++) {
+            if (m_input_unit[i]->get_direction() == "Down") {
+                m_escape_buffers[i] = std::make_unique<EscapeBuffer>(
+                    this, i, buf_depth);
+            }
+        }
+    }
+
     // Vector stats need a runtime size; set it here after ports are connected.
     // Also apply nozero so non-interposer routers don't clutter stats.txt.
     interposerStats.vc_active_cycles.flags(statistics::nozero);
@@ -109,6 +192,10 @@ Router::wakeup()
     for (int inport = 0; inport < m_input_unit.size(); inport++) {
         m_input_unit[inport]->wakeup();
     }
+
+    // Escape buffer: continue absorb / re-inject (before SA)
+    if (m_is_interposer)
+        escapeBufferTick();
 
     // check for incoming credits
     // Note: the credit update is happening before SA
@@ -130,43 +217,333 @@ Router::wakeup()
     // Interposer VC monitoring: sample active VCs every wakeup cycle
     // ---------------------------------------------------------------
     if (m_is_interposer) {
+        Tick STALL_THRESHOLD =
+            m_network_ptr->getInterposerStallThreshold() * clockPeriod();
+
+        // --- Step 1: Check Up InputUnit (chiplet → interposer) ---
+        bool any_input_stall = false;
         for (int i = 0; i < (int)m_input_unit.size(); i++) {
             int active = m_input_unit[i]->get_num_active_vcs();
             interposerStats.vc_active_cycles += active;
             interposerStats.port_vc_active_cycles[i] += active;
-            // Only sample stall on "Up" input ports (TSV from chiplet)
+
             if (m_input_unit[i]->get_direction() == "Up") {
                 m_input_unit[i]->sampleVcStall();
-
-                // Deadlock early exit: if any VC stalls beyond threshold
-                static const Tick STALL_THRESHOLD = 10000;
                 int num_vcs = m_input_unit[i]->get_num_vcs();
                 for (int v = 0; v < num_vcs; v++) {
                     if (m_input_unit[i]->getVcStallCycles(v)
                             >= STALL_THRESHOLD) {
-                        // Write deadlock info to log file
-                        {
-                            std::ofstream logf("m5out/deadlock.log",
-                                               std::ios::app);
-                            logf << "[DEADLOCK DETECTED] tick="
-                                 << curTick()
-                                 << " Router " << m_id
-                                 << " port" << i << "(Up) vc" << v
-                                 << " sz="
-                                 << m_input_unit[i]->getVcBufferSize(v)
-                                 << " stall="
-                                 << m_input_unit[i]->getVcStallCycles(v)
-                                 << " cycles (threshold="
-                                 << STALL_THRESHOLD << ")"
-                                 << std::endl;
-                            logf.close();
-                        }
-                        // Trigger normal stats dump before exit
-                        exitSimLoop("Deadlock detected: interposer VC "
-                                    "queue stalled", 1);
-                        return;
+                        any_input_stall = true;
+                        break;
                     }
                 }
+            }
+        }
+        m_up_input_stall = any_input_stall;
+
+        // --- Step 2: Check Up OutputUnit (interposer → chiplet) ---
+        bool any_output_stall = false;
+        int broadcast_interval =
+            m_network_ptr->getHealthMonitorBroadcastInterval();
+        int change_threshold =
+            m_network_ptr->getHealthMonitorChangeThreshold();
+
+        for (int o = 0; o < (int)m_output_unit.size(); o++) {
+            if (m_output_unit[o]->get_direction() == "Up") {
+                // Update health monitor and check broadcast
+                if (m_output_unit[o]->hasHealthMonitor()) {
+                    // Sync free credits FIRST, then compute score
+                    m_output_unit[o]->syncHealthCredits(curTick());
+
+                    // Sample health score into histogram every cycle
+                    m_output_unit[o]->sampleHealthScore(curTick());
+
+                    // Worst score: for deadlock detection
+                    int worst = m_output_unit[o]
+                        ->getWorstQuantizedScore(curTick());
+                    if (worst == 0)
+                        any_output_stall = true;
+                    // Average score: for routing optimization
+                    int avg = m_output_unit[o]
+                        ->getAverageQuantizedScore(curTick());
+
+                    // S=0 (any VC dead): immediately broadcast
+                    // worst score to all same-chiplet peers
+                    if (worst == 0) {
+                        for (auto *peer : m_chiplet_peers) {
+                            peer->receiveHealthScore(
+                                m_id, worst);
+                        }
+                        DPRINTF(RubyNetwork,
+                            "Router %d OutPort %d(Up) S=0 "
+                            "immediate broadcast to %d "
+                            "chiplet-%d peers\n",
+                            m_id, o,
+                            (int)m_chiplet_peers.size(),
+                            m_chiplet_id);
+                    }
+
+                    // S!=0: broadcast average score to direct
+                    // neighbors for routing optimization
+                    if (worst != 0) {
+                        bool need_broadcast =
+                            m_output_unit[o]->updateHealthMonitor(
+                                curTick(), broadcast_interval,
+                                change_threshold);
+
+                        if (need_broadcast) {
+                            int sent = 0;
+                            m_output_unit[o]
+                                ->recordHealthBroadcast(
+                                    curTick());
+                            for (auto *nb : m_direct_neighbors) {
+                                if (nb->getChipletId()
+                                        == m_chiplet_id) {
+                                    nb->receiveHealthScore(
+                                        m_id, avg);
+                                    sent++;
+                                }
+                            }
+                            DPRINTF(RubyNetwork,
+                                "Router %d OutPort %d(Up) "
+                                "worst=%d avg=%d sent to %d "
+                                "same-chiplet neighbors\n",
+                                m_id, o, worst, avg, sent);
+                        }
+                    }
+                }
+            }
+        }
+        m_up_output_stall = any_output_stall;
+
+        // --- IPDR deadlock detection (routing algorithm 7) ---
+        if (m_network_ptr->getRoutingAlgorithm() == IPDR_) {
+            int ipdr_idx = m_id - 64; // boundary index 0-15
+            if (ipdr_idx >= 0 && ipdr_idx < 16) {
+                if (any_output_stall) {
+                    // Up output congested: increment dd_counter
+                    m_network_ptr->ipdrIncrementDd(ipdr_idx);
+                    // Check if threshold reached → enter recovery
+                    if (m_network_ptr->ipdrGetState(ipdr_idx)
+                            == GarnetNetwork::IPDR_DD) {
+                        m_network_ptr->ipdrEnterRecovery(ipdr_idx);
+                        DPRINTF(RubyNetwork,
+                            "IPDR: Router %d boundary %d "
+                            "entering recovery at tick %lld\n",
+                            m_id, ipdr_idx, curTick());
+                    }
+                } else {
+                    // Not congested: reset counter
+                    m_network_ptr->ipdrResetDd(ipdr_idx);
+                }
+                // During recovery: drain IPDR buffer
+                if (m_network_ptr->ipdrGetState(ipdr_idx)
+                        == GarnetNetwork::IPDR_RECOVERY) {
+                    // Attempt to drain: if Up output has free VC,
+                    // decrement buffer used count
+                    if (m_network_ptr->ipdrBufferUsed(ipdr_idx) > 0
+                            && !any_output_stall) {
+                        m_network_ptr->ipdrBufferRemove(ipdr_idx);
+                    }
+                    // If buffer fully drained, finish recovery
+                    if (m_network_ptr->ipdrBufferUsed(ipdr_idx) == 0) {
+                        m_network_ptr->ipdrFinishRecovery(ipdr_idx);
+                        DPRINTF(RubyNetwork,
+                            "IPDR: Router %d boundary %d "
+                            "recovery finished at tick %lld\n",
+                            m_id, ipdr_idx, curTick());
+                    }
+                }
+            }
+        }
+
+        // --- Step 3: Global deadlock check across ALL interposer routers ---
+        // (commented out: replaced by distributed detection via health
+        //  propagation, kept for future reference)
+        // Any router with input stall + any router with output stall = deadlock
+        /*
+        bool global_input_stall = false;
+        bool global_output_stall = false;
+        for (auto *r : m_network_ptr->getRouters()) {
+            if (r->getUpInputStall())  global_input_stall = true;
+            if (r->getUpOutputStall()) global_output_stall = true;
+            if (global_input_stall && global_output_stall) break;
+        }
+
+        if (global_input_stall && global_output_stall) {
+            std::ofstream logf("m5out/deadlock.log", std::ios::app);
+            logf << "[DEADLOCK DETECTED] tick=" << curTick()
+                 << " (detected by Router " << m_id << ")"
+                 << std::endl;
+
+            // Log ALL interposer routers with stalls
+            for (auto *r : m_network_ptr->getRouters()) {
+                if (!r->getUpInputStall() && !r->getUpOutputStall())
+                    continue;
+                logf << " Router " << r->get_id();
+                if (r->getUpInputStall())
+                    logf << " [input STALL]";
+                if (r->getUpOutputStall())
+                    logf << " [output STALL]";
+                logf << std::endl;
+            }
+            logf.close();
+
+            exitSimLoop("Deadlock detected: interposer TSV "
+                        "input and output both stalled globally", 1);
+            return;
+        }
+        */
+
+        // --- Step 4: Distributed deadlock detection ---
+        // Condition: received S=0 from any same-chiplet peer
+        //   (peer's Up output channel is dead)
+        // AND local Up InputUnit has timed out
+        //   (down channel blocked: flits from chiplet stuck)
+        // Together these form a circular dependency → deadlock.
+        // Skip if in recovery cooldown period
+        if (m_recovery_cooldown > 0 && curTick() < m_recovery_cooldown) {
+            // Still cooling down from last recovery
+        } else {
+
+        bool peer_dead = false;
+        int dead_peer_id = -1;
+        for (auto &entry : m_neighbor_health_table) {
+            if (entry.second == 0) {
+                // Check if this source is a same-chiplet peer
+                for (auto *p : m_chiplet_peers) {
+                    if (p->get_id() == entry.first) {
+                        peer_dead = true;
+                        dead_peer_id = entry.first;
+                        break;
+                    }
+                }
+                if (peer_dead) break;
+            }
+        }
+
+        if (peer_dead && m_up_input_stall) {
+            // --- Log deadlock detection (preserved) ---
+            std::ofstream logf("m5out/deadlock.log", std::ios::app);
+            logf << "[DEADLOCK DETECTED] tick=" << curTick()
+                 << " Router " << m_id
+                 << " (chiplet " << m_chiplet_id << ")"
+                 << std::endl;
+            logf << "  Peer Router " << dead_peer_id
+                 << " Up channel dead (S=0)" << std::endl;
+            Tick stall_threshold =
+                m_network_ptr->getInterposerStallThreshold();
+            for (int i = 0; i < (int)m_input_unit.size(); i++) {
+                if (m_input_unit[i]->get_direction() != "Up")
+                    continue;
+                int num_vcs = m_input_unit[i]->get_num_vcs();
+                for (int v = 0; v < num_vcs; v++) {
+                    Tick stall = m_input_unit[i]->getVcStallCycles(v);
+                    if (stall >= stall_threshold) {
+                        logf << "  Local Router " << m_id
+                             << " Up input vc" << v
+                             << " stall=" << stall
+                             << " (threshold=" << stall_threshold
+                             << ")" << std::endl;
+                    }
+                }
+            }
+
+            // Log full chiplet health state
+            logf << "  Chiplet " << m_chiplet_id
+                 << " health table:" << std::endl;
+            for (auto &entry : m_neighbor_health_table) {
+                logf << "    Router " << entry.first
+                     << " S=" << entry.second << std::endl;
+            }
+
+            // --- Escape buffer recovery ---
+            logf << "[DEADLOCK RECOVERY] tick=" << curTick()
+                 << " Router " << m_id << std::endl;
+
+            for (auto &[inport, esc] : m_escape_buffers) {
+                if (esc->isOccupied())
+                    continue;
+
+                InputUnit *iu = m_input_unit[inport].get();
+                int num_vcs = iu->get_num_vcs();
+
+                // Find the most stalled VC with a head flit
+                int worst_vc = -1;
+                Tick worst_stall = 0;
+                for (int v = 0; v < num_vcs; v++) {
+                    if (iu->get_vc_state(v) != ACTIVE_)
+                        continue;
+                    if (iu->getVcBufferSize(v) == 0)
+                        continue;
+                    flit *top = iu->peekTopFlit(v);
+                    if (top->get_type() != HEAD_ &&
+                        top->get_type() != HEAD_TAIL_)
+                        continue;
+                    Tick stall = iu->getVcStallCycles(v);
+                    if (stall > worst_stall) {
+                        worst_stall = stall;
+                        worst_vc = v;
+                    }
+                }
+
+                if (worst_vc >= 0) {
+                    esc->startAbsorb(iu, worst_vc, curTick());
+                    logf << "  Absorbed vc " << worst_vc
+                         << " from inport " << inport
+                         << " (stall=" << worst_stall << ")"
+                         << std::endl;
+                } else {
+                    logf << "  No absorbable VC on inport "
+                         << inport << std::endl;
+                }
+            }
+
+            logf.close();
+
+            // Reset peer's health score to avoid re-triggering next cycle
+            m_neighbor_health_table[dead_peer_id] = 7;
+
+            // Set cooldown: skip deadlock detection for a while
+            m_recovery_cooldown = curTick()
+                + m_network_ptr->getInterposerStallThreshold()
+                  * clockPeriod();
+        }
+        } // end cooldown else
+    }
+}
+
+// Escape buffer per-cycle tick: continue absorbing + attempt re-injection
+void
+Router::escapeBufferTick()
+{
+    Tick max_wait = m_network_ptr->getInterposerStallThreshold()
+                    * clockPeriod();
+
+    for (auto &[inport, esc] : m_escape_buffers) {
+        if (!esc->isOccupied())
+            continue;
+
+        InputUnit *iu = m_input_unit[inport].get();
+
+        // Phase 1: continue absorbing if partial packet
+        if (esc->isAbsorbing()) {
+            esc->continueAbsorb(iu, curTick());
+            continue;  // don't try re-inject same cycle
+        }
+
+        // Phase 2: try re-injection into a free VC
+        if (!esc->isEmpty()) {
+            bool ok = esc->tryReinject(iu, this, curTick());
+            if (!ok && esc->isWaitExpired(curTick(), max_wait)) {
+                // Waited too long — force re-inject
+                esc->forceReinject(iu, this, curTick());
+
+                std::ofstream logf("m5out/deadlock.log", std::ios::app);
+                logf << "[ESCAPE FORCE REINJECT] tick=" << curTick()
+                     << " Router " << m_id
+                     << " inport " << inport << std::endl;
+                logf.close();
             }
         }
     }
@@ -235,9 +612,173 @@ Router::getInportDirection(int inport)
 }
 
 int
-Router::route_compute(RouteInfo route, int inport, PortDirection inport_dirn)
+Router::route_compute(RouteInfo route, int inport, PortDirection inport_dirn,
+                      flit *t_flit)
 {
-    return routingUnit.outportCompute(route, inport, inport_dirn);
+    return routingUnit.outportCompute(route, inport, inport_dirn, t_flit);
+}
+
+int
+Router::optimizeUpRoute(int outport, flit *t_flit)
+{
+    // Only optimize if enabled and this is an interposer router
+    if (!m_network_ptr->isRoutingOptimizationEnabled())
+        return outport;
+    if (!m_is_interposer)
+        return outport;
+
+    // Only HEAD flits make routing decisions; BODY/TAIL follow the
+    // outport already granted to the packet's HEAD.
+    flit_type ft = t_flit->get_type();
+    if (ft != HEAD_ && ft != HEAD_TAIL_)
+        return outport;
+
+    // If this flit has a routing target, check if we are the target
+    int target = t_flit->get_routing_target();
+    if (target >= 0) {
+        if (target == m_id) {
+            t_flit->set_routing_target(-1);
+            for (int i = 0; i < get_num_outports(); i++) {
+                if (getOutportDirection(i) == "Up")
+                    return i;  // 无条件上行，不管健康度
+            }
+            // 找不到 Up 端口，异常情况，返回原 outport
+            return outport;
+        } else {
+            // [Fix Bug 2] Not the target — but check if the target
+            // is still healthy. If target's score dropped to 0,
+            // cancel the redirect and re-evaluate.
+            if (m_neighbor_health_table.count(target) &&
+                m_neighbor_health_table.at(target) == 0) {
+                // Target went dead, cancel redirect
+                t_flit->set_routing_target(-1);
+                // Fall through to re-evaluate
+            } else {
+                // Target still OK, let normal routing forward
+                return outport;
+            }
+        }
+    }
+
+    // Only optimize if output direction is "Up"
+    if (getOutportDirection(outport) != "Up")
+        return outport;
+
+    m_opt_called++;
+
+    // Collect candidates: self + same-chiplet direct neighbors only
+    struct Candidate {
+        int router_id;
+        int score;
+    };
+    std::vector<Candidate> candidates;
+
+    // Self: get average score from Up OutputUnit
+    int self_score = 7;  // default healthy
+    for (int i = 0; i < get_num_outports(); i++) {
+        if (getOutportDirection(i) == "Up" &&
+            getOutputUnit(i)->hasHealthMonitor()) {
+            self_score = getOutputUnit(i)->getAverageQuantizedScore(
+                curTick());
+            break;
+        }
+    }
+    candidates.push_back({m_id, self_score});
+
+    // [Fix Bug 4] Only consider same-chiplet direct neighbors.
+    // Cross-chiplet neighbors never receive health broadcasts,
+    // so their default score of 7 would incorrectly attract flits.
+    for (auto *peer : m_direct_neighbors) {
+        if (peer->getChipletId() != m_chiplet_id)
+            continue;
+        int peer_score = 7;  // default
+        if (m_neighbor_health_table.count(peer->get_id()))
+            peer_score = m_neighbor_health_table.at(peer->get_id());
+        candidates.push_back({peer->get_id(), peer_score});
+    }
+
+    // Only redirect when self is truly congested (score <= 3)
+    // and a neighbor is at least 1 level better
+    static const int CONGESTION_THRESHOLD = 3;
+    static const int LOCAL_BIAS = 1;
+
+    if (self_score > CONGESTION_THRESHOLD)
+        return outport;
+
+    m_opt_congested++;
+
+    int best_neighbor_score = -1;
+    std::vector<Candidate> best_neighbors;
+    for (auto &c : candidates) {
+        if (c.router_id == m_id) continue;
+        if (c.score > best_neighbor_score)
+            best_neighbor_score = c.score;
+    }
+    // No neighbor is better, stay local
+    if (best_neighbor_score < self_score + LOCAL_BIAS)
+        return outport;
+
+    m_opt_neighbor_better++;
+
+    // Collect neighbors with the best score
+    for (auto &c : candidates) {
+        if (c.router_id != m_id && c.score == best_neighbor_score)
+            best_neighbors.push_back(c);
+    }
+
+    // Round-robin tie-breaking
+    int rr = routingUnit.getRoundRobinIndex();
+    int chosen_idx = rr % best_neighbors.size();
+    routingUnit.advanceRoundRobin();
+    int chosen_id = best_neighbors[chosen_idx].router_id;
+
+    // Redirect: route toward the chosen peer on interposer grid
+    static const int NUM_CHIPLET_ROUTERS = 64;
+    static const int NUM_GATEWAYS        = 4;
+    static const int CHIPLET_MESH_COLS   = 2;
+
+    auto interposer_xy = [&](int ir_id, int &ix, int &iy) {
+        int local_ir    = ir_id - NUM_CHIPLET_ROUTERS;
+        int chiplet_id  = local_ir / NUM_GATEWAYS;
+        int gw_idx      = local_ir % NUM_GATEWAYS;
+        int chip_col    = chiplet_id % CHIPLET_MESH_COLS;
+        int chip_row    = chiplet_id / CHIPLET_MESH_COLS;
+        int gw_lx       = gw_idx % 2;
+        int gw_ly       = gw_idx / 2;
+        ix = chip_col * 2 + gw_lx;
+        iy = chip_row * 2 + gw_ly;
+    };
+
+    int my_ix, my_iy, tgt_ix, tgt_iy;
+    interposer_xy(m_id, my_ix, my_iy);
+    interposer_xy(chosen_id, tgt_ix, tgt_iy);
+
+    PortDirection dirn;
+    if (tgt_ix != my_ix)
+        dirn = (tgt_ix > my_ix) ? "East" : "West";
+    else
+        dirn = (tgt_iy > my_iy) ? "South" : "North";
+
+    // [Fix Bug 1] Check lateral outport has available credits before
+    // redirecting. If the lateral link is also congested, don't
+    // redirect — it would just shift the problem sideways.
+    for (int i = 0; i < get_num_outports(); i++) {
+        if (getOutportDirection(i) == dirn) {
+            if (!getOutputUnit(i)->has_free_vc(
+                    t_flit->get_vnet())) {
+                // Lateral direction has no free VC, abort redirect
+                m_opt_lateral_blocked++;
+                return outport;
+            }
+            // Lateral link available, proceed with redirect
+            m_opt_redirected++;
+            t_flit->set_routing_target(chosen_id);
+            return i;
+        }
+    }
+
+    // Fallback: no such direction (edge router), keep original
+    return outport;
 }
 
 void
@@ -321,6 +862,7 @@ Router::collateStats()
                   << interposerStats.vc_active_cycles.value()
                   << "  ports=" << m_input_unit.size()
                   << "  total_in_vcs=" << total_in_vcs
+                  << "  up_flits=" << m_up_flit_count
                   << std::endl;
 
         for (int i = 0; i < (int)m_input_unit.size(); i++) {
@@ -345,6 +887,94 @@ Router::collateStats()
                 }
             }
             std::cout << std::endl;
+        }
+
+        // Up output ports: per-VC credit & health info + histogram
+        for (int o = 0; o < (int)m_output_unit.size(); o++) {
+            if (m_output_unit[o]->get_direction() != "Up")
+                continue;
+
+            // Per-VC credit and health score
+            if (m_output_unit[o]->hasHealthMonitor()) {
+                int num_vcs = m_output_unit[o]->getNumMonitoredVcs();
+                int vc_base = m_output_unit[o]->getMonitorVcStart();
+                std::cout << "  outport" << o << "(Up) per-VC health:";
+                for (int v = 0; v < num_vcs; v++) {
+                    int vc = vc_base + v;
+                    int cr = m_output_unit[o]->get_credit_count(vc);
+                    int sc = m_output_unit[o]->getVcQuantizedScore(
+                                 v, curTick());
+                    Tick ms = m_output_unit[o]->getVcMaxStallTicks(v);
+                    std::cout << " vc" << vc
+                              << "[cr=" << cr
+                              << ",S=" << sc
+                              << ",max_stall=" << ms << "]";
+                }
+                std::cout << std::endl;
+
+                // Aggregated: worst and average
+                int worst = m_output_unit[o]
+                    ->getWorstQuantizedScore(curTick());
+                int avg = m_output_unit[o]
+                    ->getAverageQuantizedScore(curTick());
+                std::cout << "  outport" << o << "(Up)"
+                          << " worst_S=" << worst
+                          << " avg_S=" << avg
+                          << std::endl;
+
+                // Health score histogram (worst score)
+                const auto &hist =
+                    m_output_unit[o]->getHealthScoreHistogram();
+                uint64_t total_samples = 0;
+                for (int s = 0; s < 8; s++)
+                    total_samples += hist[s];
+
+                std::cout << "  outport" << o
+                          << "(Up) health histogram(average)"
+                          << " [total=" << total_samples << "]:"
+                          << std::endl << "    ";
+                for (int s = 0; s < 8; s++) {
+                    std::cout << "S" << s << "=" << hist[s];
+                    if (s < 7) std::cout << "  ";
+                }
+                std::cout << std::endl;
+
+                // Print percentage distribution
+                if (total_samples > 0) {
+                    std::cout << "    ";
+                    for (int s = 0; s < 8; s++) {
+                        float pct = 100.0f * hist[s] / total_samples;
+                        if (hist[s] > 0) {
+                            std::cout << "S" << s << "="
+                                      << std::fixed
+                                      << std::setprecision(1)
+                                      << pct << "%  ";
+                        }
+                    }
+                    std::cout << std::endl;
+                }
+            }
+        }
+
+        // Routing optimization statistics (old optimizeUpRoute)
+        if (m_opt_called > 0 || m_opt_redirected > 0) {
+            std::cout << "  [RoutingOpt] called=" << m_opt_called
+                      << " congested=" << m_opt_congested
+                      << " neighbor_better=" << m_opt_neighbor_better
+                      << " lateral_blocked=" << m_opt_lateral_blocked
+                      << " redirected=" << m_opt_redirected
+                      << std::endl;
+        }
+
+        // Adaptive RC statistics (algorithm 4)
+        if (m_arc_at_target > 0) {
+            std::cout << "  [AdaptiveRC] at_target=" << m_arc_at_target
+                      << " healthy=" << m_arc_healthy
+                      << " congested=" << m_arc_congested
+                      << " redirected=" << m_arc_redirected
+                      << " no_better=" << m_arc_no_better
+                      << " anti_livelock=" << m_arc_anti_livelock
+                      << std::endl;
         }
     }
 }
@@ -404,6 +1034,28 @@ Router::functionalWrite(Packet *pkt)
     }
 
     return num_functional_writes;
+}
+
+void
+Router::receiveHealthScore(int source_router_id, int score)
+{
+    m_neighbor_health_table[source_router_id] = score;
+}
+
+int
+Router::getNeighborHealth(int router_id) const
+{
+    auto it = m_neighbor_health_table.find(router_id);
+    if (it != m_neighbor_health_table.end())
+        return it->second;
+    return 7; // default: assume healthy if unknown
+}
+
+bool
+Router::hasNeighborHealth(int router_id) const
+{
+    return m_neighbor_health_table.find(router_id)
+           != m_neighbor_health_table.end();
 }
 
 } // namespace garnet

@@ -236,6 +236,36 @@ GarnetSyntheticTraffic::generatePkt()
         dest_x = (src_x + (int) ceil(radix/2) - 1) % radix;
         dest_y = src_y;
         destination = dest_y*radix + dest_x;
+    } else if (traffic == HOTSPOT_) {
+        // Hotspot traffic: chiplet 0 <-> chiplet 3 with 60% probability
+        // Each chiplet has 16 nodes (nodes_per_chiplet = num_destinations/4)
+        int nodes_per_chiplet = num_destinations / 4;
+        int src_chiplet = source / nodes_per_chiplet;
+        float r = random_mt.random<unsigned>(0, 99) / 100.0f;
+
+        if (src_chiplet == 0 && r < 0.6f) {
+            // Chiplet 0 -> Chiplet 3
+            destination = 3 * nodes_per_chiplet +
+                random_mt.random<unsigned>(0, nodes_per_chiplet - 1);
+        } else if (src_chiplet == 3 && r < 0.6f) {
+            // Chiplet 3 -> Chiplet 0
+            destination =
+                random_mt.random<unsigned>(0, nodes_per_chiplet - 1);
+        } else {
+            // Uniform random (excluding self)
+            destination = random_mt.random<unsigned>(
+                0, num_destinations - 1);
+        }
+    } else if (traffic == HOTSPOT_SINGLE_) {
+        // Single-node hotspot: 60% probability all nodes send to node 0
+        // This concentrates traffic on gateway router 64's Up link
+        float r = random_mt.random<unsigned>(0, 99) / 100.0f;
+        if (r < 0.6f) {
+            destination = 0;
+        } else {
+            destination = random_mt.random<unsigned>(
+                0, num_destinations - 1);
+        }
     }
     else {
         fatal("Unknown Traffic Type: %s!\n", traffic);
@@ -334,6 +364,8 @@ GarnetSyntheticTraffic::initTrafficType()
     trafficStringToEnum["tornado"] = TORNADO_;
     trafficStringToEnum["transpose"] = TRANSPOSE_;
     trafficStringToEnum["uniform_random"] = UNIFORM_RANDOM_;
+    trafficStringToEnum["hotspot"] = HOTSPOT_;
+    trafficStringToEnum["hotspot_single"] = HOTSPOT_SINGLE_;
 }
 
 void

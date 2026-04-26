@@ -34,6 +34,7 @@
 #include "debug/RubyNetwork.hh"
 #include "mem/ruby/network/garnet/Credit.hh"
 #include "mem/ruby/network/garnet/CreditLink.hh"
+#include "mem/ruby/network/garnet/GarnetNetwork.hh"
 #include "mem/ruby/network/garnet/Router.hh"
 #include "mem/ruby/network/garnet/flitBuffer.hh"
 
@@ -68,6 +69,11 @@ OutputUnit::decrement_credit(int out_vc)
             out_vc, m_router->curCycle(), m_credit_link->name());
 
     outVcState[out_vc].decrement_credit();
+
+    if (out_vc >= m_monitor_vc_start && out_vc < m_monitor_vc_end
+        && !m_vc_health_monitors.empty())
+        m_vc_health_monitors[out_vc - m_monitor_vc_start]
+            ->recordCreditChange(curTick());
 }
 
 void
@@ -80,6 +86,11 @@ OutputUnit::increment_credit(int out_vc)
             out_vc, m_router->curCycle(), m_credit_link->name());
 
     outVcState[out_vc].increment_credit();
+
+    if (out_vc >= m_monitor_vc_start && out_vc < m_monitor_vc_end
+        && !m_vc_health_monitors.empty())
+        m_vc_health_monitors[out_vc - m_monitor_vc_start]
+            ->recordCreditChange(curTick());
 }
 
 // Check if the output VC (i.e., input VC at next router)
@@ -176,6 +187,143 @@ uint32_t
 OutputUnit::functionalWrite(Packet *pkt)
 {
     return outBuffer.functionalWrite(pkt);
+}
+
+void
+OutputUnit::initHealthMonitor(Tick max_stall_threshold,
+                               int vc_start, int vc_end,
+                               float alpha)
+{
+    m_monitor_vc_start = vc_start;
+    m_monitor_vc_end = vc_end;
+    m_monitor_total_credits = 0;
+
+    // Create one ChannelHealthMonitor per VC
+    for (int vc = vc_start; vc < vc_end; vc++) {
+        int vc_credits = outVcState[vc].get_credit_count();
+        m_monitor_total_credits += vc_credits;
+        m_vc_health_monitors.push_back(
+            std::make_unique<ChannelHealthMonitor>(
+                vc_credits, max_stall_threshold, alpha));
+    }
+    m_last_periodic_broadcast = 0;
+}
+
+void
+OutputUnit::syncHealthCredits(Tick current_tick)
+{
+    if (m_vc_health_monitors.empty())
+        return;
+    for (int vc = m_monitor_vc_start; vc < m_monitor_vc_end; vc++) {
+        int idx = vc - m_monitor_vc_start;
+        int free = outVcState[vc].get_credit_count();
+        m_vc_health_monitors[idx]->updateFreeCredits(free, current_tick);
+    }
+}
+
+bool
+OutputUnit::updateHealthMonitor(Tick current_tick, int broadcast_interval,
+                                 int change_threshold)
+{
+    if (m_vc_health_monitors.empty())
+        return false;
+
+    // 1. Any VC deadlocked (S=0): immediate
+    for (auto &mon : m_vc_health_monitors) {
+        if (mon->isDeadlocked(current_tick))
+            return true;
+    }
+
+    // 2. Significant score change (use worst score)
+    for (auto &mon : m_vc_health_monitors) {
+        if (mon->needsImmediateBroadcast(current_tick, change_threshold))
+            return true;
+    }
+
+    // 3. Periodic broadcast
+    if ((current_tick - m_last_periodic_broadcast) >=
+        (Tick)broadcast_interval) {
+        return true;
+    }
+
+    return false;
+}
+
+int
+OutputUnit::getWorstQuantizedScore(Tick current_tick)
+{
+    if (m_vc_health_monitors.empty())
+        return 7;
+    int worst = 7;
+    for (auto &mon : m_vc_health_monitors) {
+        int s = mon->quantizeScore(current_tick);
+        if (s < worst)
+            worst = s;
+    }
+    return worst;
+}
+
+int
+OutputUnit::getAverageQuantizedScore(Tick current_tick)
+{
+    if (m_vc_health_monitors.empty())
+        return 7;
+    int sum = 0;
+    for (auto &mon : m_vc_health_monitors)
+        sum += mon->quantizeScore(current_tick);
+    return sum / (int)m_vc_health_monitors.size();
+}
+
+void
+OutputUnit::recordHealthBroadcast(Tick current_tick)
+{
+    if (!m_vc_health_monitors.empty()) {
+        for (auto &mon : m_vc_health_monitors)
+            mon->recordBroadcast(current_tick);
+        m_last_periodic_broadcast = current_tick;
+    }
+}
+
+void
+OutputUnit::sampleHealthScore(Tick current_tick)
+{
+    if (m_vc_health_monitors.empty())
+        return;
+    // Sample average score into histogram (reflects routing health)
+    int score = getAverageQuantizedScore(current_tick);
+    m_health_histogram[score]++;
+}
+
+bool
+OutputUnit::isHealthDeadlocked(Tick current_tick)
+{
+    for (auto &mon : m_vc_health_monitors) {
+        if (mon->isDeadlocked(current_tick))
+            return true;
+    }
+    return false;
+}
+
+bool
+OutputUnit::hasHealthMonitor() const
+{
+    return !m_vc_health_monitors.empty();
+}
+
+int
+OutputUnit::getVcQuantizedScore(int idx, Tick current_tick)
+{
+    if (idx < 0 || idx >= (int)m_vc_health_monitors.size())
+        return 7;
+    return m_vc_health_monitors[idx]->quantizeScore(current_tick);
+}
+
+Tick
+OutputUnit::getVcMaxStallTicks(int idx) const
+{
+    if (idx < 0 || idx >= (int)m_vc_health_monitors.size())
+        return 0;
+    return m_vc_health_monitors[idx]->getMaxStallTicks();
 }
 
 } // namespace garnet

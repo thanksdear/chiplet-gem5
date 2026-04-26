@@ -78,6 +78,14 @@ class flit
     void set_dequeue_time(Tick time) { m_dequeue_time = time; }
     void set_enqueue_time(Tick time) { m_enqueue_time = time; }
 
+    // -1 = no optimization target; >=0 = target interposer router ID
+    int get_routing_target() { return m_routing_target; }
+    void set_routing_target(int target) { m_routing_target = target; }
+
+    // Redirect counter: max 1 redirect allowed to prevent livelock
+    int get_redirect_count() { return m_redirect_count; }
+    void incr_redirect_count() { m_redirect_count++; }
+
     void increment_hops() { m_route.hops_traversed++; }
     virtual void print(std::ostream& out) const;
 
@@ -126,6 +134,8 @@ class flit
     int m_outport;
     Tick src_delay;
     std::pair<flit_stage, Tick> m_stage;
+    int m_routing_target = -1;  // -1 = no target; >=0 = optimized target router ID
+    int m_redirect_count = 0;   // number of times this flit has been redirected
 };
 
 inline std::ostream&

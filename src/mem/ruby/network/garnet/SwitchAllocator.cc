@@ -313,6 +313,29 @@ SwitchAllocator::send_allowed(int inport, int invc, int outport, int outvc)
     if (!has_outvc || !has_credit)
         return false;
 
+    // IPDR: during global recovery, block new cross-chiplet traffic
+    // at interposer routers (flits arriving from "Down" input port)
+    if (m_router->get_net_ptr()->getRoutingAlgorithm() == IPDR_
+            && m_router->isInterposer()
+            && m_router->get_net_ptr()->ipdrIsGlobalRecovery()) {
+        auto input_unit = m_router->getInputUnit(inport);
+        if (input_unit->get_direction() == "Down") {
+            // HEAD flits: absorb into IPDR buffer if space available
+            flit *t_flit = input_unit->peekTopFlit(invc);
+            if (t_flit->get_type() == HEAD_
+                    || t_flit->get_type() == HEAD_TAIL_) {
+                int ipdr_idx = m_router->get_id() - 64;
+                if (ipdr_idx >= 0 && ipdr_idx < 16) {
+                    if (m_router->get_net_ptr()
+                            ->ipdrBufferHasSpace(ipdr_idx)) {
+                        m_router->get_net_ptr()
+                            ->ipdrBufferInsert(ipdr_idx);
+                    }
+                }
+                return false; // block new packets during recovery
+            }
+        }
+    }
 
     // protocol ordering check
     if ((m_router->get_net_ptr())->isVNetOrdered(vnet)) {

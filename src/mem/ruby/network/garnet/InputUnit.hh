@@ -107,6 +107,12 @@ class InputUnit : public Consumer
 
     void increment_credit(int in_vc, bool free_signal, Tick curTime);
 
+    inline void
+    insertFlit(int vc, flit *t_flit)
+    {
+        virtualChannels[vc].insertFlit(t_flit);
+    }
+
     inline flit*
     peekTopFlit(int vc)
     {
@@ -140,6 +146,7 @@ class InputUnit : public Consumer
     }
 
     inline int get_inlink_id() { return m_in_link->get_id(); }
+    inline NetworkLink* get_in_link() { return m_in_link; }
 
     inline void
     set_credit_link(CreditLink *credit_link)

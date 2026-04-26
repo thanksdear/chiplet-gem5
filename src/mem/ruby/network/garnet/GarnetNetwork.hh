@@ -32,7 +32,9 @@
 #ifndef __MEM_RUBY_NETWORK_GARNET_0_GARNETNETWORK_HH__
 #define __MEM_RUBY_NETWORK_GARNET_0_GARNETNETWORK_HH__
 
+#include <deque>
 #include <iostream>
+#include <utility>
 #include <vector>
 
 #include "mem/ruby/network/Network.hh"
@@ -79,6 +81,14 @@ class GarnetNetwork : public Network
     uint32_t getBuffersPerDataVC() { return m_buffers_per_data_vc; }
     uint32_t getBuffersPerCtrlVC() { return m_buffers_per_ctrl_vc; }
     int getRoutingAlgorithm() const { return m_routing_algorithm; }
+    uint32_t getInterposerStallThreshold() const
+    { return m_interposer_stall_threshold; }
+    uint32_t getHealthMonitorBroadcastInterval() const
+    { return m_health_monitor_broadcast_interval; }
+    uint32_t getHealthMonitorChangeThreshold() const
+    { return m_health_monitor_change_threshold; }
+    bool isRoutingOptimizationEnabled() const
+    { return m_enable_routing_optimization; }
 
     bool isFaultModelEnabled() const { return m_enable_fault_model; }
     FaultModel* fault_model;
@@ -92,6 +102,7 @@ class GarnetNetwork : public Network
         return m_vnet_type[vnet];
     }
     int getNumRouters();
+    const std::vector<Router *>& getRouters() const { return m_routers; }
     int get_router_id(int ni, int vnet);
 
 
@@ -154,6 +165,36 @@ class GarnetNetwork : public Network
 
     void update_traffic_distribution(RouteInfo route);
 
+    // RC OPIC: simplified injection control for RC baseline
+    // Tracks rc_buffer occupancy per boundary router (4 chiplets * 4 gateways)
+    bool rcTryReserve(int boundary_idx, Tick now, Tick release_at);
+    int rcGetNearestBoundary(int router_id) const;
+    int rcGetHopDistance(int router_id, int boundary_idx) const;
+
+    // IPDR: Inter-Chiplet Priority-Driven Deadlock Resolution
+    enum IpdrState { IPDR_IDLE, IPDR_DD, IPDR_RECOVERY };
+    static const int IPDR_NUM_BOUNDARIES = 16;
+    static const int IPDR_DD_THRESHOLD = 50;
+    static const int IPDR_BUFFER_CAPACITY = 8;
+    IpdrState ipdrGetState(int boundary_idx) const
+    { return m_ipdr_state[boundary_idx]; }
+    int ipdrGetDdCounter(int boundary_idx) const
+    { return m_ipdr_dd_counter[boundary_idx]; }
+    bool ipdrIsGlobalRecovery() const { return m_ipdr_global_recovery; }
+    void ipdrSetGlobalRecovery(bool v) { m_ipdr_global_recovery = v; }
+    void ipdrIncrementDd(int boundary_idx);
+    void ipdrResetDd(int boundary_idx);
+    void ipdrEnterRecovery(int boundary_idx);
+    void ipdrFinishRecovery(int boundary_idx);
+    bool ipdrBufferHasSpace(int boundary_idx) const
+    { return m_ipdr_buffer_used[boundary_idx] < IPDR_BUFFER_CAPACITY; }
+    void ipdrBufferInsert(int boundary_idx)
+    { m_ipdr_buffer_used[boundary_idx]++; }
+    void ipdrBufferRemove(int boundary_idx)
+    { if (m_ipdr_buffer_used[boundary_idx] > 0) m_ipdr_buffer_used[boundary_idx]--; }
+    int ipdrBufferUsed(int boundary_idx) const
+    { return m_ipdr_buffer_used[boundary_idx]; }
+
   protected:
     // Configuration
     int m_num_rows;
@@ -163,7 +204,11 @@ class GarnetNetwork : public Network
     uint32_t m_buffers_per_ctrl_vc;
     uint32_t m_buffers_per_data_vc;
     int m_routing_algorithm;
+    uint32_t m_interposer_stall_threshold;
+    uint32_t m_health_monitor_broadcast_interval;
+    uint32_t m_health_monitor_change_threshold;
     bool m_enable_fault_model;
+    bool m_enable_routing_optimization;
 
     // Statistical variables
     statistics::Vector m_packets_received;
@@ -209,6 +254,21 @@ class GarnetNetwork : public Network
     std::vector<NetworkLink *> m_networklinks; // All flit links in the network
     std::vector<CreditLink *> m_creditlinks; // All credit links in the network
     std::vector<NetworkInterface *> m_nis;   // All NI's in Network
+
+    // RC OPIC state
+    static const int RC_BUFFER_CAPACITY = 4;
+    static const int RC_NUM_BOUNDARIES = 16;
+    static const int RC_ROUTERS_PER_CHIPLET = 16;
+    static const int RC_NUM_GATEWAYS = 4;
+    static const int RC_CHIPLET_COLS = 4;
+    int m_rc_available[RC_NUM_BOUNDARIES];
+    std::deque<std::pair<Tick, int>> m_rc_release_queue;
+
+    // IPDR state
+    IpdrState m_ipdr_state[IPDR_NUM_BOUNDARIES];
+    int m_ipdr_dd_counter[IPDR_NUM_BOUNDARIES];
+    int m_ipdr_buffer_used[IPDR_NUM_BOUNDARIES];
+    bool m_ipdr_global_recovery;
 };
 
 inline std::ostream&

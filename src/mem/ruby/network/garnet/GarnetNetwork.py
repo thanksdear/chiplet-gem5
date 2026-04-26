@@ -50,6 +50,14 @@ class GarnetNetwork(RubyNetwork):
     fault_model = Param.FaultModel(NULL, "network fault model");
     garnet_deadlock_threshold = Param.UInt32(50000,
                               "network-level deadlock threshold")
+    interposer_stall_threshold = Param.UInt32(10000,
+                              "interposer VC stall cycles for early exit")
+    health_monitor_broadcast_interval = Param.UInt32(50,
+                              "periodic broadcast interval in cycles")
+    health_monitor_change_threshold = Param.UInt32(1,
+                              "quantized score change threshold for immediate broadcast")
+    enable_routing_optimization = Param.Bool(False,
+                              "enable health-based routing optimization on interposer")
 
 class GarnetNetworkInterface(ClockedObject):
     type = 'GarnetNetworkInterface'

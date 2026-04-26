@@ -48,7 +48,8 @@ Options.addNoISAOptions(parser)
 parser.add_argument("--synthetic", default="uniform_random",
                     choices=['uniform_random', 'tornado', 'bit_complement', \
                              'bit_reverse', 'bit_rotation', 'neighbor', \
-                             'shuffle', 'transpose'])
+                             'shuffle', 'transpose', 'hotspot', \
+                             'hotspot_single'])
 
 parser.add_argument("-i", "--injectionrate", type=float, default=0.1,
                     metavar="I",

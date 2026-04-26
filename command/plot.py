@@ -1,5 +1,7 @@
 import re
 import csv
+import os
+from datetime import datetime
 import matplotlib.pyplot as plt
 
 # 1. 读取并解析文件
@@ -20,7 +22,7 @@ with open(file_path, 'r') as f:
         data.append([float(r), float(l)])
 
 # 2. 导出为 CSV 文件
-csv_file = 'noc_performance_results.csv'
+csv_file = f'noc_performance_results_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
 with open(csv_file, 'w', newline='') as f:
     writer = csv.writer(f)
     writer.writerow(['injection_rate', 'average_latency']) # 写入表头
@@ -50,6 +52,8 @@ plt.legend()
 # 如果延迟跨度过大（如你的数据从26跳到1572），建议开启对数坐标查看趋势
 # plt.yscale('log') 
 
-plt.savefig('noc_latency_chart.png', dpi=300)
-print("成功生成图像: noc_latency_chart.png")
+timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+chart_file = f'noc_latency_chart_{timestamp}.png'
+plt.savefig(chart_file, dpi=300)
+print(f"成功生成图像: {chart_file}")
 plt.show()

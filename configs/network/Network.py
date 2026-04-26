@@ -80,6 +80,14 @@ def define_options(parser):
         "--garnet-deadlock-threshold", action="store",
         type=int, default=50000,
         help="network-level deadlock threshold.")
+    parser.add_argument(
+        "--interposer-stall-threshold", action="store",
+        type=int, default=10000,
+        help="interposer VC stall threshold for early deadlock exit.")
+    parser.add_argument(
+        "--enable-routing-optimization", action="store",
+        type=str, default="False",
+        help="enable health-based routing optimization on interposer.")
 
 def create_network(options, ruby):
 
@@ -121,6 +129,9 @@ def init_network(options, network, InterfaceClass):
         network.ni_flit_size = options.link_width_bits / 8
         network.routing_algorithm = options.routing_algorithm
         network.garnet_deadlock_threshold = options.garnet_deadlock_threshold
+        network.interposer_stall_threshold = options.interposer_stall_threshold
+        network.enable_routing_optimization = \
+            options.enable_routing_optimization.lower() in ('true', '1', 'yes')
 
         # Create Bridges and connect them to the corresponding links
         for intLink in network.int_links:

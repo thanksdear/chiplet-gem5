@@ -70,8 +70,12 @@ GarnetNetwork::GarnetNetwork(const Params &p)
     m_buffers_per_data_vc = p.buffers_per_data_vc;
     m_buffers_per_ctrl_vc = p.buffers_per_ctrl_vc;
     m_routing_algorithm = p.routing_algorithm;
+    m_interposer_stall_threshold = p.interposer_stall_threshold;
+    m_health_monitor_broadcast_interval = p.health_monitor_broadcast_interval;
+    m_health_monitor_change_threshold = p.health_monitor_change_threshold;
 
     m_enable_fault_model = p.enable_fault_model;
+    m_enable_routing_optimization = p.enable_routing_optimization;
     if (m_enable_fault_model)
         fault_model = p.fault_model;
 
@@ -100,6 +104,18 @@ GarnetNetwork::GarnetNetwork(const Params &p)
         NetworkInterface *ni = safe_cast<NetworkInterface *>(*i);
         m_nis.push_back(ni);
         ni->init_net_ptr(this);
+    }
+
+    // RC OPIC init
+    for (int i = 0; i < RC_NUM_BOUNDARIES; i++)
+        m_rc_available[i] = RC_BUFFER_CAPACITY;
+
+    // IPDR init
+    m_ipdr_global_recovery = false;
+    for (int i = 0; i < IPDR_NUM_BOUNDARIES; i++) {
+        m_ipdr_state[i] = IPDR_IDLE;
+        m_ipdr_dd_counter[i] = 0;
+        m_ipdr_buffer_used[i] = 0;
     }
 
     // Print Garnet version
@@ -621,6 +637,100 @@ GarnetNetwork::functionalWrite(Packet *pkt)
     }
 
     return num_functional_writes;
+}
+
+// ---------------------------------------------------------------------------
+// RC OPIC: simplified behavioral model of Remote Control injection throttle
+// ---------------------------------------------------------------------------
+
+bool
+GarnetNetwork::rcTryReserve(int boundary_idx, Tick now, Tick release_at)
+{
+    // Drain any slots whose release time has passed
+    while (!m_rc_release_queue.empty() &&
+           m_rc_release_queue.front().first <= now) {
+        int idx = m_rc_release_queue.front().second;
+        m_rc_available[idx]++;
+        m_rc_release_queue.pop_front();
+    }
+
+    if (m_rc_available[boundary_idx] > 0) {
+        m_rc_available[boundary_idx]--;
+        m_rc_release_queue.push_back({release_at, boundary_idx});
+        return true;
+    }
+    return false;
+}
+
+int
+GarnetNetwork::rcGetNearestBoundary(int router_id) const
+{
+    int chiplet = router_id / RC_ROUTERS_PER_CHIPLET;
+    int local   = router_id % RC_ROUTERS_PER_CHIPLET;
+    int lx = local % RC_CHIPLET_COLS;
+    int ly = local / RC_CHIPLET_COLS;
+    // Nearest corner gateway: 0=TL, 1=TR, 2=BL, 3=BR
+    int gw_lx = (lx < RC_CHIPLET_COLS / 2) ? 0 : 1;
+    int gw_ly = (ly < RC_CHIPLET_COLS / 2) ? 0 : 1;
+    int gw_idx = gw_ly * 2 + gw_lx;
+    return chiplet * RC_NUM_GATEWAYS + gw_idx;
+}
+
+int
+GarnetNetwork::rcGetHopDistance(int router_id, int boundary_idx) const
+{
+    int local  = router_id % RC_ROUTERS_PER_CHIPLET;
+    int lx = local % RC_CHIPLET_COLS;
+    int ly = local / RC_CHIPLET_COLS;
+    int gw_idx = boundary_idx % RC_NUM_GATEWAYS;
+    // Gateway corner coordinates
+    int gw_lx = (gw_idx % 2) ? (RC_CHIPLET_COLS - 1) : 0;
+    int gw_ly = (gw_idx / 2) ? (RC_CHIPLET_COLS - 1) : 0;
+    return abs(lx - gw_lx) + abs(ly - gw_ly);
+}
+
+// IPDR methods
+void
+GarnetNetwork::ipdrIncrementDd(int boundary_idx)
+{
+    if (m_ipdr_state[boundary_idx] == IPDR_IDLE) {
+        m_ipdr_dd_counter[boundary_idx]++;
+        if (m_ipdr_dd_counter[boundary_idx] >= IPDR_DD_THRESHOLD) {
+            m_ipdr_state[boundary_idx] = IPDR_DD;
+        }
+    }
+}
+
+void
+GarnetNetwork::ipdrResetDd(int boundary_idx)
+{
+    m_ipdr_dd_counter[boundary_idx] = 0;
+    if (m_ipdr_state[boundary_idx] == IPDR_DD)
+        m_ipdr_state[boundary_idx] = IPDR_IDLE;
+}
+
+void
+GarnetNetwork::ipdrEnterRecovery(int boundary_idx)
+{
+    m_ipdr_state[boundary_idx] = IPDR_RECOVERY;
+    m_ipdr_global_recovery = true;
+}
+
+void
+GarnetNetwork::ipdrFinishRecovery(int boundary_idx)
+{
+    m_ipdr_state[boundary_idx] = IPDR_IDLE;
+    m_ipdr_dd_counter[boundary_idx] = 0;
+    m_ipdr_buffer_used[boundary_idx] = 0;
+    // Check if any boundary is still in recovery
+    bool any_recovery = false;
+    for (int i = 0; i < IPDR_NUM_BOUNDARIES; i++) {
+        if (m_ipdr_state[i] == IPDR_RECOVERY) {
+            any_recovery = true;
+            break;
+        }
+    }
+    m_ipdr_global_recovery = any_recovery;
 }
 
 } // namespace garnet

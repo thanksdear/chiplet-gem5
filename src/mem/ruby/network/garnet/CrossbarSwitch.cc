@@ -87,6 +87,12 @@ CrossbarSwitch::wakeup()
             m_router->getOutputUnit(outport)->insert_flit(t_flit);
             switch_buffer.getTopFlit();
             m_crossbar_activity++;
+
+            // Count flits sent toward chiplet (Up direction)
+            if (m_router->isInterposer() &&
+                m_router->getOutputUnit(outport)->get_direction() == "Up") {
+                m_router->incrementUpFlitCount();
+            }
         }
     }
 }

@@ -55,7 +55,8 @@ class RoutingUnit
     RoutingUnit(Router *router);
     int outportCompute(RouteInfo route,
                       int inport,
-                      PortDirection inport_dirn);
+                      PortDirection inport_dirn,
+                      flit *t_flit = nullptr);
 
     // Topology-agnostic Routing Table based routing (default)
     void addRoute(std::vector<NetDest>& routing_table_entry);
@@ -78,6 +79,22 @@ class RoutingUnit
                              int inport,
                              PortDirection inport_dirn);
 
+    // Chiplet XY: XY within chiplet + XY on interposer
+    int outportComputeChipletXY(RouteInfo route,
+                                int inport,
+                                PortDirection inport_dirn);
+
+    // Adaptive Chiplet XY: health-aware routing on interposer
+    int outportComputeAdaptiveChipletXY(RouteInfo route,
+                                        int inport,
+                                        PortDirection inport_dirn,
+                                        flit *t_flit);
+
+    // MTR: Modular Turn Restriction baseline (ISCA 2018)
+    int outportComputeMTR(RouteInfo route,
+                          int inport,
+                          PortDirection inport_dirn);
+
     // Returns true if vnet is present in the vector
     // of vnets or if the vector supports all vnets.
     bool supportsVnet(int vnet, std::vector<int> sVnets);
@@ -95,6 +112,13 @@ class RoutingUnit
     std::map<int, PortDirection> m_inports_idx2dirn;
     std::map<int, PortDirection> m_outports_idx2dirn;
     std::map<PortDirection, int> m_outports_dirn2idx;
+
+    // Round-robin index for tie-breaking in routing optimization
+    int m_rr_index = 0;
+
+  public:
+    int getRoundRobinIndex() const { return m_rr_index; }
+    void advanceRoundRobin() { m_rr_index++; }
 };
 
 } // namespace garnet

@@ -33,6 +33,7 @@
 #define __MEM_RUBY_NETWORK_GARNET_0_ROUTER_HH__
 
 #include <iostream>
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -44,6 +45,7 @@
 #include "mem/ruby/network/garnet/GarnetNetwork.hh"
 #include "mem/ruby/network/garnet/RoutingUnit.hh"
 #include "mem/ruby/network/garnet/SwitchAllocator.hh"
+#include "mem/ruby/network/garnet/EscapeBuffer.hh"
 #include "mem/ruby/network/garnet/flit.hh"
 #include "params/GarnetRouter.hh"
 
@@ -116,7 +118,10 @@ class Router : public BasicRouter, public Consumer
     PortDirection getOutportDirection(int outport);
     PortDirection getInportDirection(int inport);
 
-    int route_compute(RouteInfo route, int inport, PortDirection direction);
+    int route_compute(RouteInfo route, int inport, PortDirection direction,
+                      flit *t_flit = nullptr);
+    // Health-based routing optimization for interposer Up direction
+    int optimizeUpRoute(int outport, flit *t_flit);
     void grant_switch(int inport, flit *t_flit);
     void schedule_wakeup(Cycles time);
 
@@ -172,6 +177,78 @@ class Router : public BasicRouter, public Consumer
     //     after ports are connected (init() runs before regStats())
     // ---------------------------------------------------------------
     bool m_is_interposer;
+
+    // Deadlock detection flags (set per-cycle, checked globally)
+    bool m_up_input_stall = false;   // Up InputUnit stalled
+    bool m_up_output_stall = false;  // Up OutputUnit stalled
+    uint64_t m_up_flit_count = 0;    // flits sent toward chiplet (Up)
+
+  public:
+    bool getUpInputStall() const { return m_up_input_stall; }
+    bool getUpOutputStall() const { return m_up_output_stall; }
+    void incrementUpFlitCount() { m_up_flit_count++; }
+    uint64_t getUpFlitCount() const { return m_up_flit_count; }
+
+    // ----- Health score propagation interface -----
+    int getChipletId() const { return m_chiplet_id; }
+    bool isInterposer() const { return m_is_interposer; }
+
+    // Called by neighbor routers to push their health score to us
+    void receiveHealthScore(int source_router_id, int score);
+
+    // Query neighbor health table (for routing decisions)
+    int getNeighborHealth(int router_id) const;
+    bool hasNeighborHealth(int router_id) const;
+    const std::map<int, int>& getNeighborHealthTable() const
+    { return m_neighbor_health_table; }
+    const std::vector<Router*>& getDirectNeighbors() const
+    { return m_direct_neighbors; }
+    void incrOptRedirected() { m_opt_redirected++; }
+
+    // Adaptive RC statistics incrementors
+    void incrArcAtTarget() { m_arc_at_target++; }
+    void incrArcHealthy() { m_arc_healthy++; }
+    void incrArcCongested() { m_arc_congested++; }
+    void incrArcRedirected() { m_arc_redirected++; }
+    void incrArcNoBetter() { m_arc_no_better++; }
+    void incrArcAntiLivelock() { m_arc_anti_livelock++; }
+
+    // Get the list of same-chiplet interposer router pointers
+    const std::vector<Router*>& getChipletPeers() const
+    { return m_chiplet_peers; }
+
+  private:
+    // ----- Chiplet grouping & health propagation -----
+    int m_chiplet_id = -1;               // which chiplet this router serves
+    std::vector<Router*> m_chiplet_peers; // same-chiplet interposer routers (excluding self)
+    std::vector<Router*> m_direct_neighbors; // adjacent interposer routers (E/W/N/S)
+    std::map<int, int> m_neighbor_health_table; // router_id → quantized health score [0,7]
+
+    // ----- Routing optimization statistics -----
+    int m_opt_called = 0;          // optimizeUpRoute called (is Up direction)
+    int m_opt_congested = 0;       // self_score <= threshold
+    int m_opt_neighbor_better = 0; // neighbor score satisfies LOCAL_BIAS
+    int m_opt_lateral_blocked = 0; // lateral link has no free VC
+    int m_opt_redirected = 0;      // actually redirected
+
+    // ----- Adaptive RC statistics (algorithm 4) -----
+    int m_arc_at_target = 0;       // flit arrived at its target gateway
+    int m_arc_healthy = 0;         // target healthy, go Up directly
+    int m_arc_congested = 0;       // target congested, try redirect
+    int m_arc_redirected = 0;      // actually redirected to neighbor
+    int m_arc_no_better = 0;       // no better neighbor, go Up anyway
+    int m_arc_anti_livelock = 0;   // redirected flit went Up (anti-livelock)
+
+    // ----- Recovery cooldown -----
+    Tick m_recovery_cooldown = 0;  // skip deadlock detection until this tick
+
+    // ----- Escape buffer for deadlock recovery -----
+    // One EscapeBuffer per "Down" input port (chiplet → interposer)
+    // Key: inport index, Value: escape buffer
+    std::map<int, std::unique_ptr<EscapeBuffer>> m_escape_buffers;
+
+    // Escape buffer deadlock recovery logic (called from wakeup)
+    void escapeBufferTick();
 
     struct InterposerStats : public statistics::Group
     {

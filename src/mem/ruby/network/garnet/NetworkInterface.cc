@@ -385,6 +385,29 @@ NetworkInterface::flitisizeMessage(MsgPtr msg_ptr, int vnet)
         m_net_ptr->MessageSizeType_to_int(net_msg_ptr->getMessageSize()),
         vnet, oPort->bitWidth());
 
+    // RC OPIC: throttle outbound (cross-chiplet) packet injection
+    if (m_net_ptr->getRoutingAlgorithm() == RC_) {
+        int src_router = oPort->routerID();
+        int src_chiplet = src_router / 16;
+        if (!dest_nodes.empty()) {
+            int dest_router = m_net_ptr->get_router_id(dest_nodes[0], vnet);
+            if (dest_router < 64) {
+                int dst_chiplet = dest_router / 16;
+                if (dst_chiplet != src_chiplet) {
+                    int boundary = m_net_ptr->rcGetNearestBoundary(src_router);
+                    int hop_dist = m_net_ptr->rcGetHopDistance(
+                        src_router, boundary);
+                    // Release after OPIC round-trip + mesh transit + pipeline
+                    Tick release = curTick() + 2 * hop_dist + 1 + hop_dist + 5;
+                    if (!m_net_ptr->rcTryReserve(
+                            boundary, curTick(), release)) {
+                        return false;
+                    }
+                }
+            }
+        }
+    }
+
     // loop to convert all multicast messages into unicast messages
     for (int ctr = 0; ctr < dest_nodes.size(); ctr++) {
 

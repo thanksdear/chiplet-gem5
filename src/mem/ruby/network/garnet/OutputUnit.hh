@@ -35,8 +35,11 @@
 #include <iostream>
 #include <vector>
 
+#include <memory>
+
 #include "base/compiler.hh"
 #include "mem/ruby/common/Consumer.hh"
+#include "mem/ruby/network/garnet/ChannelHealthMonitor.hh"
 #include "mem/ruby/network/garnet/CommonTypes.hh"
 #include "mem/ruby/network/garnet/NetworkLink.hh"
 #include "mem/ruby/network/garnet/OutVcState.hh"
@@ -60,6 +63,7 @@ class OutputUnit : public Consumer
                uint32_t consumerVcs);
     ~OutputUnit() = default;
     void set_out_link(NetworkLink *link);
+    NetworkLink* get_out_link() { return m_out_link; }
     void set_credit_link(CreditLink *credit_link);
     void wakeup();
     flitBuffer* getOutQueue();
@@ -106,6 +110,55 @@ class OutputUnit : public Consumer
 
     uint32_t functionalWrite(Packet *pkt);
 
+    // Initialize per-VC health monitors (called after port is fully connected)
+    // vc_start/vc_end: only monitor VCs in [vc_start, vc_end) range (vnet 2)
+    void initHealthMonitor(Tick max_stall_threshold,
+                           int vc_start, int vc_end,
+                           float alpha = 0.50f);
+
+    // Update health monitor each cycle; returns true if broadcast needed
+    bool updateHealthMonitor(Tick current_tick, int broadcast_interval,
+                             int change_threshold);
+
+    // Sync free credits into health monitors (call before computing score)
+    void syncHealthCredits(Tick current_tick);
+
+    // Get worst (min) quantized score across all VCs — for deadlock detection
+    int getWorstQuantizedScore(Tick current_tick);
+
+    // Get average quantized score across all VCs — for routing optimization
+    int getAverageQuantizedScore(Tick current_tick);
+
+    // Check deadlock via health monitor (any VC dead → deadlocked)
+    bool isHealthDeadlocked(Tick current_tick);
+
+    // Record that a broadcast was sent
+    void recordHealthBroadcast(Tick current_tick);
+
+    // Check if health monitor is initialized
+    bool hasHealthMonitor() const;
+
+    // Sample health score into histogram (call once per cycle)
+    void sampleHealthScore(Tick current_tick);
+
+    // Get histogram: count of each quantized score [0..7]
+    const std::vector<uint64_t>& getHealthScoreHistogram() const
+    { return m_health_histogram; }
+
+    // Get per-VC quantized score (idx = vc - vc_start)
+    int getVcQuantizedScore(int idx, Tick current_tick);
+
+    // Get per-VC max stall ticks (idx = vc - vc_start)
+    Tick getVcMaxStallTicks(int idx) const;
+
+    // Get number of monitored VCs
+    int getNumMonitoredVcs() const
+    { return m_monitor_vc_end - m_monitor_vc_start; }
+
+    // Get monitored VC start index
+    int getMonitorVcStart() const { return m_monitor_vc_start; }
+
+
   private:
     Router *m_router;
     GEM5_CLASS_VAR_USED int m_id;
@@ -118,6 +171,16 @@ class OutputUnit : public Consumer
     flitBuffer outBuffer;
     // vc state of downstream router
     std::vector<OutVcState> outVcState;
+
+    // Per-VC health monitors (created for Up output ports on interposer)
+    std::vector<std::unique_ptr<ChannelHealthMonitor>> m_vc_health_monitors;
+    Tick m_last_periodic_broadcast = 0;
+    int m_monitor_vc_start = 0;  // first VC to monitor (vnet 2 start)
+    int m_monitor_vc_end = 0;    // one past last VC to monitor
+    int m_monitor_total_credits = 0; // total credits for monitored VCs
+
+    // Histogram of quantized health scores [0..7], index = score
+    std::vector<uint64_t> m_health_histogram = std::vector<uint64_t>(8, 0);
 };
 
 } // namespace garnet
