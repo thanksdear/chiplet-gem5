@@ -120,8 +120,6 @@ class Router : public BasicRouter, public Consumer
 
     int route_compute(RouteInfo route, int inport, PortDirection direction,
                       flit *t_flit = nullptr);
-    // Health-based routing optimization for interposer Up direction
-    int optimizeUpRoute(int outport, flit *t_flit);
     void grant_switch(int inport, flit *t_flit);
     void schedule_wakeup(Cycles time);
 
@@ -203,8 +201,6 @@ class Router : public BasicRouter, public Consumer
     { return m_neighbor_health_table; }
     const std::vector<Router*>& getDirectNeighbors() const
     { return m_direct_neighbors; }
-    void incrOptRedirected() { m_opt_redirected++; }
-
     // Adaptive RC statistics incrementors
     void incrArcAtTarget() { m_arc_at_target++; }
     void incrArcHealthy() { m_arc_healthy++; }
@@ -223,13 +219,6 @@ class Router : public BasicRouter, public Consumer
     std::vector<Router*> m_chiplet_peers; // same-chiplet interposer routers (excluding self)
     std::vector<Router*> m_direct_neighbors; // adjacent interposer routers (E/W/N/S)
     std::map<int, int> m_neighbor_health_table; // router_id → quantized health score [0,7]
-
-    // ----- Routing optimization statistics -----
-    int m_opt_called = 0;          // optimizeUpRoute called (is Up direction)
-    int m_opt_congested = 0;       // self_score <= threshold
-    int m_opt_neighbor_better = 0; // neighbor score satisfies LOCAL_BIAS
-    int m_opt_lateral_blocked = 0; // lateral link has no free VC
-    int m_opt_redirected = 0;      // actually redirected
 
     // ----- Adaptive RC statistics (algorithm 4) -----
     int m_arc_at_target = 0;       // flit arrived at its target gateway

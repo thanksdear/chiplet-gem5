@@ -12,9 +12,8 @@ STATS_FILE="network_stats_${TIMESTAMP}.txt"
 #hotspot_single
 # ===== Simulation Parameters =====
 VCS_PER_VNET=4
-ROUTING_ALG=6        # 0=TABLE, 1=XY, 2=CUSTOM, 3=XY_CHIPLET
+ROUTING_ALG=4        # 0=TABLE, 1=XY, 2=CUSTOM, 3=XY_CHIPLET
 STALL_THRESHOLD=50
-ROUTING_OPT=False     # True=enable, False=disable
 SYNTHETIC=transpose         
 SIM_CYCLES=100000
 NUM_CPUS=64
@@ -34,7 +33,6 @@ num_dirs: ${NUM_DIRS}
 vcs_per_vnet: ${VCS_PER_VNET}
 routing_algorithm: ${ROUTING_ALG}
 stall_threshold: ${STALL_THRESHOLD}
-routing_optimization: ${ROUTING_OPT}
 synthetic: ${SYNTHETIC}
 sim_cycles: ${SIM_CYCLES}
 injection_rate: ${start} ~ ${end} (step=${step})
@@ -58,8 +56,7 @@ rm -f m5out/deadlock.log
 --injectionrate=$rate \
 --vcs-per-vnet=${VCS_PER_VNET} \
 --routing-algorithm=${ROUTING_ALG} \
---interposer-stall-threshold=${STALL_THRESHOLD} \
---enable-routing-optimization=${ROUTING_OPT}
+--interposer-stall-threshold=${STALL_THRESHOLD}
 #2>&1 | tee interposer_vc.log
 echo "injectionrate:$rate">> "$STATS_FILE"
 # Append deadlock info with injection rate to unified log

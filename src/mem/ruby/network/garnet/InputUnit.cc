@@ -97,10 +97,6 @@ InputUnit::wakeup()
             int outport = m_router->route_compute(t_flit->get_route(),
                 m_id, m_direction, t_flit);
 
-            // Health-based routing optimization for interposer Up direction
-            // (only used by CHIPLET_XY_; ADAPTIVE_CHIPLET_XY_ handles it in RC)
-            outport = m_router->optimizeUpRoute(outport, t_flit);
-
             // Update output port in VC
             // All flits in this packet will use this output port
             // The output port field in the flit is updated after it wins SA

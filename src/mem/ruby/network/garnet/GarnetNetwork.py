@@ -56,8 +56,6 @@ class GarnetNetwork(RubyNetwork):
                               "periodic broadcast interval in cycles")
     health_monitor_change_threshold = Param.UInt32(1,
                               "quantized score change threshold for immediate broadcast")
-    enable_routing_optimization = Param.Bool(False,
-                              "enable health-based routing optimization on interposer")
 
 class GarnetNetworkInterface(ClockedObject):
     type = 'GarnetNetworkInterface'

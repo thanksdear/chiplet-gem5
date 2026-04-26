@@ -75,7 +75,6 @@ GarnetNetwork::GarnetNetwork(const Params &p)
     m_health_monitor_change_threshold = p.health_monitor_change_threshold;
 
     m_enable_fault_model = p.enable_fault_model;
-    m_enable_routing_optimization = p.enable_routing_optimization;
     if (m_enable_fault_model)
         fault_model = p.fault_model;
 
