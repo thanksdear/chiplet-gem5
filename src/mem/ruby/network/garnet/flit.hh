@@ -86,6 +86,9 @@ class flit
     int get_redirect_count() { return m_redirect_count; }
     void incr_redirect_count() { m_redirect_count++; }
 
+    bool is_inter_chiplet() { return m_is_inter_chiplet; }
+    void set_inter_chiplet(bool v) { m_is_inter_chiplet = v; }
+
     void increment_hops() { m_route.hops_traversed++; }
     virtual void print(std::ostream& out) const;
 
@@ -136,6 +139,7 @@ class flit
     std::pair<flit_stage, Tick> m_stage;
     int m_routing_target = -1;  // -1 = no target; >=0 = optimized target router ID
     int m_redirect_count = 0;   // number of times this flit has been redirected
+    bool m_is_inter_chiplet = false;
 };
 
 inline std::ostream&

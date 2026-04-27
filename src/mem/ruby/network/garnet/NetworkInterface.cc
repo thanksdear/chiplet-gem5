@@ -467,6 +467,11 @@ NetworkInterface::flitisizeMessage(MsgPtr msg_ptr, int vnet)
                 oPort->bitWidth(), curTick());
 
             fl->set_src_delay(curTick() - msg_ptr->getTime());
+            // IPDR: mark inter-chiplet flits for priority arbitration
+            int src_chip = route.src_router / 16;
+            int dst_chip = route.dest_router / 16;
+            fl->set_inter_chiplet(
+                route.dest_router < 64 && src_chip != dst_chip);
             niOutVcs[vc].insert(fl);
         }
 
