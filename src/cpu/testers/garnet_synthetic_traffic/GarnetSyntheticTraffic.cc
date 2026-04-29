@@ -266,6 +266,24 @@ GarnetSyntheticTraffic::generatePkt()
             destination = random_mt.random<unsigned>(
                 0, num_destinations - 1);
         }
+    } else if (traffic == HOTSPOT_MULTI_) {
+        // Multi-hotspot: 4 hotspot nodes (center of each chiplet)
+        // 40% send to a hotspot in a DIFFERENT chiplet, 60% uniform
+        int npc = num_destinations / 4;  // nodes per chiplet
+        int hotspots[4] = {5, 5 + npc, 5 + 2*npc, 5 + 3*npc};
+        int src_chiplet = source / npc;
+        float r = random_mt.random<unsigned>(0, 99) / 100.0f;
+        if (r < 0.4f) {
+            // Pick a hotspot in a different chiplet
+            int tgt;
+            do {
+                tgt = random_mt.random<unsigned>(0, 3);
+            } while (tgt == src_chiplet);
+            destination = hotspots[tgt];
+        } else {
+            destination = random_mt.random<unsigned>(
+                0, num_destinations - 1);
+        }
     }
     else {
         fatal("Unknown Traffic Type: %s!\n", traffic);
@@ -366,6 +384,7 @@ GarnetSyntheticTraffic::initTrafficType()
     trafficStringToEnum["uniform_random"] = UNIFORM_RANDOM_;
     trafficStringToEnum["hotspot"] = HOTSPOT_;
     trafficStringToEnum["hotspot_single"] = HOTSPOT_SINGLE_;
+    trafficStringToEnum["hotspot_multi"] = HOTSPOT_MULTI_;
 }
 
 void

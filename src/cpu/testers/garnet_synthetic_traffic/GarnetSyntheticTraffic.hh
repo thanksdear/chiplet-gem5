@@ -53,6 +53,7 @@ enum TrafficType {BIT_COMPLEMENT_ = 0,
                   UNIFORM_RANDOM_ = 7,
                   HOTSPOT_ = 8,
                   HOTSPOT_SINGLE_ = 9,
+                  HOTSPOT_MULTI_ = 10,
                   NUM_TRAFFIC_PATTERNS_};
 
 class Packet;
