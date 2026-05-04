@@ -443,6 +443,16 @@ RoutingUnit::outportComputeChipletXY(RouteInfo route,
         int my_ix, my_iy;
         interposer_xy(my_id, my_ix, my_iy);
 
+        // Destination on interposer (e.g. Dir in bench mode)
+        if (dest_id >= NUM_CHIPLET_ROUTERS) {
+            if (dest_id == my_id)
+                return lookupRoutingTable(route.vnet, route.net_dest);
+            int tgt_ix, tgt_iy;
+            interposer_xy(dest_id, tgt_ix, tgt_iy);
+            PortDirection dirn = xy_dirn(my_ix, my_iy, tgt_ix, tgt_iy);
+            return m_outports_dirn2idx.at(dirn);
+        }
+
         // Destination is on a chiplet; find the target interposer router
         int target_ir = dest_target_interposer(dest_id);
 
@@ -575,6 +585,16 @@ RoutingUnit::outportComputeAdaptiveChipletXY(RouteInfo route,
     if (is_interposer) {
         int my_ix, my_iy;
         interposer_xy(my_id, my_ix, my_iy);
+
+        // Destination on interposer (e.g. Dir in bench mode)
+        if (dest_id >= NUM_CHIPLET_ROUTERS) {
+            if (dest_id == my_id)
+                return lookupRoutingTable(route.vnet, route.net_dest);
+            int tgt_ix, tgt_iy;
+            interposer_xy(dest_id, tgt_ix, tgt_iy);
+            PortDirection dirn = xy_dirn(my_ix, my_iy, tgt_ix, tgt_iy);
+            return m_outports_dirn2idx.at(dirn);
+        }
 
         int target_ir = dest_target_interposer(dest_id);
 
