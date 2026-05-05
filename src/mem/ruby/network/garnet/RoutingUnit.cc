@@ -472,6 +472,10 @@ RoutingUnit::outportComputeChipletXY(RouteInfo route,
     // Case 2: Chiplet boundary router
     // ------------------------------------------------------------------
     if (is_chiplet_boundary) {
+        // Dest on interposer (Dir node) -> route Down to interposer
+        if (dest_id >= NUM_CHIPLET_ROUTERS)
+            return m_outports_dirn2idx.at("Down");
+
         int my_chiplet  = my_id / ROUTERS_PER_CHIPLET;
         bool same_chiplet = (dest_id < NUM_CHIPLET_ROUTERS) &&
                             (dest_id / ROUTERS_PER_CHIPLET == my_chiplet);
@@ -723,6 +727,9 @@ RoutingUnit::outportComputeAdaptiveChipletXY(RouteInfo route,
     // Case 2: Chiplet boundary router (same as CHIPLET_XY_)
     // ------------------------------------------------------------------
     if (is_chiplet_boundary) {
+        if (dest_id >= NUM_CHIPLET_ROUTERS)
+            return m_outports_dirn2idx.at("Down");
+
         int my_chiplet  = my_id / ROUTERS_PER_CHIPLET;
         bool same_chiplet = (dest_id < NUM_CHIPLET_ROUTERS) &&
                             (dest_id / ROUTERS_PER_CHIPLET == my_chiplet);
