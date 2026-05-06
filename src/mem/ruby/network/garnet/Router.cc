@@ -315,6 +315,11 @@ Router::wakeup()
                 }
             }
         }
+        // Fallback: when Up health monitor is disabled, use Down port
+        // (input) stall to detect congestion for deadlock detection
+        if (!m_network_ptr->isUpHealthMonitorEnabled()) {
+            any_output_stall = any_input_stall;
+        }
         m_up_output_stall = any_output_stall;
 
         // --- IPDR deadlock detection (routing algorithm 7) ---
@@ -421,6 +426,11 @@ Router::wakeup()
                 }
                 if (peer_dead) break;
             }
+        }
+
+        // Fallback: when Up monitor disabled, use input stall as proxy
+        if (!m_network_ptr->isUpHealthMonitorEnabled() && m_up_input_stall) {
+            peer_dead = true;
         }
 
         if (peer_dead && m_up_input_stall) {
