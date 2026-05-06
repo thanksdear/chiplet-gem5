@@ -851,6 +851,8 @@ RoutingUnit::outportComputeMTR(RouteInfo route,
     // Case 2: Chiplet boundary router
     // ------------------------------------------------------------------
     if (is_chiplet_boundary) {
+        if (dest_id >= NUM_CHIPLET_ROUTERS)
+            return m_outports_dirn2idx.at("Down");
         int my_chiplet = my_id / ROUTERS_PER_CHIPLET;
         bool same_chiplet = (dest_id < NUM_CHIPLET_ROUTERS) &&
                             (dest_id / ROUTERS_PER_CHIPLET == my_chiplet);
