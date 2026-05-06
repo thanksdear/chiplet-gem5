@@ -84,6 +84,10 @@ def define_options(parser):
         "--interposer-stall-threshold", action="store",
         type=int, default=10000,
         help="interposer VC stall threshold for early deadlock exit.")
+    parser.add_argument(
+        "--up-health-monitor", action="store",
+        type=int, default=1,
+        help="enable Up port health monitor (0=Down-only, 1=Up+Down)")
 
 def create_network(options, ruby):
 
@@ -126,6 +130,7 @@ def init_network(options, network, InterfaceClass):
         network.routing_algorithm = options.routing_algorithm
         network.garnet_deadlock_threshold = options.garnet_deadlock_threshold
         network.interposer_stall_threshold = options.interposer_stall_threshold
+        network.up_health_monitor_enabled = bool(options.up_health_monitor)
 
         # Create Bridges and connect them to the corresponding links
         for intLink in network.int_links:

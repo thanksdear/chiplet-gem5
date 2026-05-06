@@ -94,7 +94,8 @@ Router::init()
     }
 
     // Initialize health monitors for Up output ports on interposer routers
-    if (m_is_interposer) {
+    if (m_is_interposer &&
+        m_network_ptr->isUpHealthMonitorEnabled()) {
         // Convert cycle-based threshold to ticks
         Tick stall_threshold =
             m_network_ptr->getInterposerStallThreshold() * clockPeriod();
