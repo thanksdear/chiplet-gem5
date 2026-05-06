@@ -48,12 +48,14 @@ class Chiplet2_5D_bench(SimpleTopology):
             num_chiplet_routers + 3 * num_gateways_per_chiplet + 3,  # C3-BR = 79
         ]
 
-        # Separate CPU nodes and Dir nodes
+        # Separate chiplet nodes (L1 + L2) and Dir nodes
         num_cpus = getattr(options, 'num_cpus', 64)
-        cpu_nodes = nodes[:num_cpus]
-        dir_nodes = nodes[num_cpus:]
+        num_l2 = getattr(options, 'num_l2caches', 0)
+        num_chiplet_nodes = num_cpus + num_l2
+        chiplet_nodes = nodes[:num_chiplet_nodes]
+        dir_nodes = nodes[num_chiplet_nodes:]
 
-        print(f"[Chiplet2_5D_bench] {len(cpu_nodes)} CPU nodes, "
+        print(f"[Chiplet2_5D_bench] {len(chiplet_nodes)} CPU nodes, "
               f"{len(dir_nodes)} Dir nodes")
         print(f"[Chiplet2_5D_bench] Dir routers: {dir_router_ids}")
 
@@ -68,7 +70,7 @@ class Chiplet2_5D_bench(SimpleTopology):
         link_count = 0
 
         # CPU nodes -> chiplet routers (0-63)
-        for i, n in enumerate(cpu_nodes):
+        for i, n in enumerate(chiplet_nodes):
             router_id = i % num_chiplet_routers
             ext_links.append(ExtLink(
                 link_id=link_count, ext_node=n,
