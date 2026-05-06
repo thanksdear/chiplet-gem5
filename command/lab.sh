@@ -12,16 +12,16 @@ STATS_FILE="network_stats_${TIMESTAMP}.txt"
 #hotspot_single
 # ===== Simulation Parameters =====
 VCS_PER_VNET=4
-ROUTING_ALG=4        # 0=TABLE, 1=XY, 2=CUSTOM, 3=XY_CHIPLET
+ROUTING_ALG=7        # 0=TABLE, 1=XY, 2=CUSTOM, 3=XY_CHIPLET
 STALL_THRESHOLD=50
-SYNTHETIC=transpose         
+SYNTHETIC=uniform_random         
 SIM_CYCLES=100000
 NUM_CPUS=64
 NUM_DIRS=64
 TOPOLOGY=Chiplet2_5D
-start=0.070
+start=0.075
 step=0.001
-end=0.070
+end=0.075
 
 # Write header with parameters
 cat > "$STATS_FILE" <<EOF
@@ -63,7 +63,8 @@ echo "injectionrate:$rate">> "$STATS_FILE"
 if [ -f m5out/deadlock.log ]; then
     echo "=== injectionrate=$rate ===" >> "$DEADLOCK_LOG"
     cat m5out/deadlock.log >> "$DEADLOCK_LOG"
-    echo "[DEADLOCK] rate=$rate" >> "$STATS_FILE"
+    deadlock_count=$(grep -c "DEADLOCK DETECTED" m5out/deadlock.log)
+    echo "deadlock_count:$deadlock_count" >> "$STATS_FILE"
 fi
 grep "packets_injected::total" m5out/stats.txt  >> "$STATS_FILE"
 grep "packets_received::total" m5out/stats.txt  >> "$STATS_FILE"
