@@ -839,6 +839,17 @@ RoutingUnit::outportComputeMTR(RouteInfo route,
     if (is_interposer) {
         int my_ix, my_iy;
         interposer_xy(my_id, my_ix, my_iy);
+
+        // Destination is on the interposer (e.g. Dir node in bench mode)
+        if (dest_id >= NUM_CHIPLET_ROUTERS) {
+            if (dest_id == my_id)
+                return lookupRoutingTable(route.vnet, route.net_dest);
+            int tgt_ix, tgt_iy;
+            interposer_xy(dest_id, tgt_ix, tgt_iy);
+            return m_outports_dirn2idx.at(
+                xy_dirn(my_ix, my_iy, tgt_ix, tgt_iy));
+        }
+
         int target_ir = dest_target_interposer(dest_id);
         if (target_ir == my_id)
             return m_outports_dirn2idx.at("Up");

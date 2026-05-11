@@ -29,6 +29,9 @@ using namespace std;
 
 namespace DSENT
 {
+    // Global tech model pointer, reused across rebuilds
+    static TechModel* g_tech_model = nullptr;
+
     static void performTimingOpt(const map<String, String> &params,
                                  Model *ms_model)
     {
@@ -283,10 +286,10 @@ namespace DSENT
         LibUtil::readFile(config_file_name, config);
 
         // Overwrite the technology file
-        TechModel *tech_model = constructTechModel(config);
+        g_tech_model = constructTechModel(config);
 
         // Build the specified model in the config file
-        return buildModel(config, tech_model);
+        return buildModel(config, g_tech_model);
     }
 
     void finalize(map<String, String> &config, Model *ms_model)
@@ -294,11 +297,24 @@ namespace DSENT
         // Delete the model
         delete ms_model;
 
+        // Delete the tech model
+        delete g_tech_model;
+        g_tech_model = nullptr;
+
         // Discard all the (key, value) pairs.
         config.clear();
 
         // Release the log file
         Log::release();
+    }
+
+    Model *rebuildModel(map<String, String> &config)
+    {
+        // Delete old model (but keep tech model)
+        // The config map is NOT cleared — it may have been updated
+
+        // Rebuild and re-evaluate with the current config
+        return buildModel(config, g_tech_model);
     }
 
     void run(const map<String, String> &params, Model *ms_model,

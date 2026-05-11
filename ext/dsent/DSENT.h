@@ -64,6 +64,9 @@ namespace DSENT
 
     void run(const std::map<String, String> &config, Model *ms_model,
              std::map<std::string, double> &outputs);
+
+    // Rebuild the model with updated parameters (keeps tech model)
+    Model *rebuildModel(std::map<String, String> &config);
 } // namespace DSENT
 
 #endif // __DSENT_DSENT_H__

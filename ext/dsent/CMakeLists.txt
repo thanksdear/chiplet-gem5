@@ -24,7 +24,7 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-cmake_minimum_required (VERSION 2.6)
+cmake_minimum_required (VERSION 3.5)
 
 project (DSENT)
 # find out all the file that need to be compiled
@@ -33,7 +33,7 @@ file(GLOB_RECURSE SRCS  "*.h" "*.cc")
 # add the library
 add_library(dsent MODULE ${SRCS})
 
-SET(PYTHON_CONFIG "python-config")
+SET(PYTHON_CONFIG "python3-config")
 
 # add the binary tree to the search path for include files
 include_directories("${CMAKE_SOURCE_DIR}" "`${PYTHON_CONFIG} --includes`")

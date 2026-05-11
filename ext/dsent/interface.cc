@@ -63,27 +63,36 @@ static PyMethodDef DSENTMethods[] = {
     {NULL, NULL, 0, NULL}
 };
 
+static struct PyModuleDef dsentmodule = {
+    PyModuleDef_HEAD_INIT,
+    "dsent",
+    NULL,
+    -1,
+    DSENTMethods
+};
 
 PyMODINIT_FUNC
-initdsent(void)
+PyInit_dsent(void)
 {
     PyObject *m;
 
-    m = Py_InitModule("dsent", DSENTMethods);
-    if (m == NULL) return;
+    m = PyModule_Create(&dsentmodule);
+    if (m == NULL) return NULL;
 
     DSENTError = PyErr_NewException("dsent.error", NULL, NULL);
     Py_INCREF(DSENTError);
     PyModule_AddObject(m, "error", DSENTError);
 
     ms_model = nullptr;
+
+    return m;
 }
 
 
 static PyObject *
 dsent_initialize(PyObject *self, PyObject *arg)
 {
-    const char *config_file = PyString_AsString(arg);
+    const char *config_file = PyUnicode_AsUTF8(arg);
     //Read the arguments sent from the python script
     if (!config_file) {
         Py_RETURN_NONE;
@@ -113,21 +122,14 @@ dsent_computeRouterPowerAndArea(PyObject *self, PyObject *args)
     unsigned int num_out_port;
     unsigned int num_vclass;
     unsigned int num_vchannels;
-    unsigned int num_buffers;
-
     unsigned int flit_width;
-    const char *input_port_buffer_model;
-    const char *crossbar_model;
-    const char *sa_arbiter_model;
-    const char *clk_tree_model;
-    unsigned int clk_tree_num_levels;
-    const char *clk_tree_wire_layer;
-    double clk_tree_wire_width_mult;
+    PyObject *buffers_obj;  // can be int or tuple of ints
 
     // Read the arguments sent from the python script
-    if (!PyArg_ParseTuple(args, "KIIIIII", &frequency, &num_in_port,
+    // Format: K=int64, I=unsigned int, O=any PyObject
+    if (!PyArg_ParseTuple(args, "KIIIIOI", &frequency, &num_in_port,
                           &num_out_port, &num_vclass, &num_vchannels,
-                          &num_buffers, &flit_width)) {
+                          &buffers_obj, &flit_width)) {
         Py_RETURN_NONE;
     }
 
@@ -138,7 +140,32 @@ dsent_computeRouterPowerAndArea(PyObject *self, PyObject *args)
     assert(flit_width != 0);
 
     vector<unsigned int> num_vchannels_vec(num_vclass, num_vchannels);
-    vector<unsigned int> num_buffers_vec(num_vclass, num_buffers);
+    vector<unsigned int> num_buffers_vec;
+
+    // Flexible buffer depth per-VN: accept int (uniform) or tuple (per-VN)
+    if (PyLong_Check(buffers_obj)) {
+        // Single int: same depth for all VNs (backwards compatible)
+        num_buffers_vec.resize(num_vclass, (unsigned int)PyLong_AsLong(buffers_obj));
+    } else if (PyTuple_Check(buffers_obj) || PyList_Check(buffers_obj)) {
+        // Tuple/list: one depth per VN
+        Py_ssize_t n = PyTuple_Check(buffers_obj) ?
+                       PyTuple_Size(buffers_obj) : PyList_Size(buffers_obj);
+        if ((size_t)n != num_vclass) {
+            PyErr_SetString(PyExc_ValueError,
+                "Number of buffer depths must match number of VNs");
+            return NULL;
+        }
+        for (Py_ssize_t i = 0; i < n; i++) {
+            PyObject *item = PyTuple_Check(buffers_obj) ?
+                             PyTuple_GetItem(buffers_obj, i) :
+                             PyList_GetItem(buffers_obj, i);
+            num_buffers_vec.push_back((unsigned int)PyLong_AsLong(item));
+        }
+    } else {
+        PyErr_SetString(PyExc_TypeError,
+            "buffers_per_vc must be int or tuple/list of ints");
+        return NULL;
+    }
     // DSENT outputs
     map<string, double> outputs;
 
@@ -152,6 +179,10 @@ dsent_computeRouterPowerAndArea(PyObject *self, PyObject *args)
         vectorToString<unsigned int>(num_buffers_vec);
     params["NumberBitsPerFlit"] = String(flit_width);
 
+    // Rebuild model with updated structural params (buffer depths, VNs, etc.)
+    delete ms_model;
+    ms_model = DSENT::rebuildModel(params);
+
     // Run DSENT
     DSENT::run(params, ms_model, outputs);
 
@@ -159,10 +190,10 @@ dsent_computeRouterPowerAndArea(PyObject *self, PyObject *args)
     PyObject *r = PyTuple_New(outputs.size());
     int index = 0;
 
-    // Prepare the output.  The assumption is that all the output
+    // Prepare the output.
     for (const auto &it : outputs) {
         PyObject *s = PyTuple_New(2);
-        PyTuple_SetItem(s, 0, PyString_FromString(it.first.c_str()));
+        PyTuple_SetItem(s, 0, PyUnicode_FromString(it.first.c_str()));
         PyTuple_SetItem(s, 1, PyFloat_FromDouble(it.second));
 
         PyTuple_SetItem(r, index, s);
@@ -179,7 +210,7 @@ dsent_computeLinkPower(PyObject *self, PyObject *arg)
     uint64_t frequency = PyLong_AsLongLong(arg);
 
     // Read the arguments sent from the python script
-    if (frequency == -1) {
+    if (PyErr_Occurred()) {
         Py_RETURN_NONE;
     }
 
@@ -194,10 +225,10 @@ dsent_computeLinkPower(PyObject *self, PyObject *arg)
     PyObject *r = PyTuple_New(outputs.size());
     int index = 0;
 
-    // Prepare the output.  The assumption is that all the output
+    // Prepare the output.
     for (const auto &it : outputs) {
         PyObject *s = PyTuple_New(2);
-        PyTuple_SetItem(s, 0, PyString_FromString(it.first.c_str()));
+        PyTuple_SetItem(s, 0, PyUnicode_FromString(it.first.c_str()));
         PyTuple_SetItem(s, 1, PyFloat_FromDouble(it.second));
 
         PyTuple_SetItem(r, index, s);
@@ -205,9 +236,4 @@ dsent_computeLinkPower(PyObject *self, PyObject *arg)
     }
 
     return r;
-}
-
-static PyObject *
-dsent_printAvailableModels(PyObject* self, PyObject *args)
-{
 }
