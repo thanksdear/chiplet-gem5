@@ -5,7 +5,8 @@
 #   - 4 Directory/MC nodes on interposer corners (IR64, IR69, IR74, IR79)
 #   - All memory traffic must traverse interposer
 #
-# Usage: --num-cpus=64 --num-dirs=4 --topology=Chiplet2_5D_bench
+# Usage: --num-cpus=64 --num-l2caches=64 --num-dirs=4
+#        --topology=Chiplet2_5D_bench
 
 from topologies.BaseTopology import SimpleTopology
 from m5.objects import *
@@ -48,15 +49,20 @@ class Chiplet2_5D_bench(SimpleTopology):
             num_chiplet_routers + 3 * num_gateways_per_chiplet + 3,  # C3-BR = 79
         ]
 
-        # Separate chiplet nodes (L1 + L2) and Dir nodes
+        # Separate controllers by type (robust against controller ordering)
+        dir_nodes = [n for n in nodes if 'Directory' in n.__class__.__name__]
+        dma_nodes = [n for n in nodes if 'DMA' in n.__class__.__name__]
+        chiplet_nodes = [n for n in nodes
+                         if n not in dir_nodes and n not in dma_nodes]
         num_cpus = getattr(options, 'num_cpus', 64)
-        num_l2 = getattr(options, 'num_l2caches', 0)
-        num_chiplet_nodes = num_cpus + num_l2
-        chiplet_nodes = nodes[:num_chiplet_nodes]
-        dir_nodes = nodes[num_chiplet_nodes:]
+        assert len(dir_nodes) == 4, \
+            f"Expected 4 Directory controllers, got {len(dir_nodes)}"
+        assert len(chiplet_nodes) >= num_cpus, \
+            f"Expected at least {num_cpus} chiplet-side controllers, " \
+            f"got {len(chiplet_nodes)}"
 
-        print(f"[Chiplet2_5D_bench] {len(chiplet_nodes)} CPU nodes, "
-              f"{len(dir_nodes)} Dir nodes")
+        print(f"[Chiplet2_5D_bench] {len(chiplet_nodes)} chiplet controllers "
+              f"(L1+L2), {len(dir_nodes)} Dirs, {len(dma_nodes)} DMAs")
         print(f"[Chiplet2_5D_bench] Dir routers: {dir_router_ids}")
 
         # --- Create routers ---
@@ -82,6 +88,16 @@ class Chiplet2_5D_bench(SimpleTopology):
         for i, n in enumerate(dir_nodes):
             rid = dir_router_ids[i % len(dir_router_ids)]
             print(f"[Chiplet2_5D_bench] Dir {i} -> Router {rid}")
+            ext_links.append(ExtLink(
+                link_id=link_count, ext_node=n,
+                int_node=routers[rid],
+                latency=interposer_link_latency))
+            link_count += 1
+
+        # DMA nodes -> interposer corner routers (shared with Dir)
+        for i, n in enumerate(dma_nodes):
+            rid = dir_router_ids[i % len(dir_router_ids)]
+            print(f"[Chiplet2_5D_bench] DMA {i} -> Router {rid}")
             ext_links.append(ExtLink(
                 link_id=link_count, ext_node=n,
                 int_node=routers[rid],
