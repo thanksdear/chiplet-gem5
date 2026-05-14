@@ -430,6 +430,7 @@ RoutingUnit::outportComputeChipletXY(RouteInfo route,
 
     // XY routing helper: returns port direction given current and dest coords
     auto xy_dirn = [](int cx, int cy, int dx, int dy) -> PortDirection {
+        assert(!(cx == dx && cy == dy));
         if (dx != cx)
             return (dx > cx) ? "East" : "West";
         else
@@ -472,6 +473,8 @@ RoutingUnit::outportComputeChipletXY(RouteInfo route,
     // Case 2: Chiplet boundary router
     // ------------------------------------------------------------------
     if (is_chiplet_boundary) {
+        if (dest_id == my_id)
+            return lookupRoutingTable(route.vnet, route.net_dest);
         // Dest on interposer (Dir node) -> route Down to interposer
         if (dest_id >= NUM_CHIPLET_ROUTERS)
             return m_outports_dirn2idx.at("Down");
@@ -508,6 +511,8 @@ RoutingUnit::outportComputeChipletXY(RouteInfo route,
     // ------------------------------------------------------------------
     // Case 3: Normal intra-chiplet router
     // ------------------------------------------------------------------
+    if (dest_id == my_id)
+        return lookupRoutingTable(route.vnet, route.net_dest);
     int my_chiplet  = my_id / ROUTERS_PER_CHIPLET;
     bool same_chiplet = (dest_id < NUM_CHIPLET_ROUTERS) &&
                         (dest_id / ROUTERS_PER_CHIPLET == my_chiplet);
