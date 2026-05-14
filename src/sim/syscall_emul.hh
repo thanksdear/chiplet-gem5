@@ -131,6 +131,10 @@ void warnUnsupportedOS(std::string syscall_name);
 /// Handler for unimplemented syscalls that we haven't thought about.
 SyscallReturn unimplementedFunc(SyscallDesc *desc, ThreadContext *tc);
 
+/// Handler for syscalls not supported in SE mode; warns and returns -ENOSYS
+/// so the caller can fall back to an older equivalent (e.g. clone3 -> clone).
+SyscallReturn enosysFunc(SyscallDesc *desc, ThreadContext *tc);
+
 /// Handler for unimplemented syscalls that we never intend to
 /// implement (signal handling, etc.) and should not affect the correct
 /// behavior of the program.  Prints a warning.  Return success to the target
