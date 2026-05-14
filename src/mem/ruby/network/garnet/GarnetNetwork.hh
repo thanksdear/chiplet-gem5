@@ -119,6 +119,9 @@ class GarnetNetwork : public Network
     //! indicates the number of messages that were written.
     uint32_t functionalWrite(Packet *pkt);
 
+    bool functionalRead(Packet *pkt);
+    bool functionalRead(Packet *pkt, WriteMask &mask);
+
     // Stats
     void collateStats();
     void regStats();

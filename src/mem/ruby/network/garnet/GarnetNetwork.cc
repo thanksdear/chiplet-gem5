@@ -619,6 +619,20 @@ GarnetNetwork::update_traffic_distribution(RouteInfo route)
         (*m_ctrl_traffic_distribution[src_node][dest_node])++;
 }
 
+bool
+GarnetNetwork::functionalRead(Packet *pkt)
+{
+    // Garnet does not track in-flight packets for functional reads;
+    // return false so the caller falls back to cache/memory lookup.
+    return false;
+}
+
+bool
+GarnetNetwork::functionalRead(Packet *pkt, WriteMask &mask)
+{
+    return false;
+}
+
 uint32_t
 GarnetNetwork::functionalWrite(Packet *pkt)
 {

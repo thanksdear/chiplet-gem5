@@ -134,6 +134,8 @@ SyscallReturn unimplementedFunc(SyscallDesc *desc, ThreadContext *tc);
 /// Handler for syscalls not supported in SE mode; warns and returns -ENOSYS
 /// so the caller can fall back to an older equivalent (e.g. clone3 -> clone).
 SyscallReturn enosysFunc(SyscallDesc *desc, ThreadContext *tc);
+/// Like enosysFunc but only prints the warning once per syscall descriptor.
+SyscallReturn enosysWarnOnceFunc(SyscallDesc *desc, ThreadContext *tc);
 
 /// Handler for unimplemented syscalls that we never intend to
 /// implement (signal handling, etc.) and should not affect the correct

@@ -482,7 +482,7 @@ SyscallDescTable<EmuLinux::SyscallABI64> EmuLinux::syscallDescs64 = {
     { 432, "fsmount" },
     { 433, "fspick" },
     { 434, "pidfd_open" },
-    { 435, "clone3", enosysFunc },
+    { 435, "clone3", enosysWarnOnceFunc },
 };
 
 } // namespace X86ISA

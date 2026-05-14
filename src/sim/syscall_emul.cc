@@ -84,6 +84,19 @@ enosysFunc(SyscallDesc *desc, ThreadContext *tc)
 }
 
 SyscallReturn
+enosysWarnOnceFunc(SyscallDesc *desc, ThreadContext *tc)
+{
+    static std::unordered_map<SyscallDesc *, bool> warned_map;
+    bool &warned = warned_map[desc];
+    if (!warned) {
+        warn("syscall %s (#%d) not supported, returning ENOSYS"
+             " (further warnings suppressed)", desc->name(), desc->num());
+        warned = true;
+    }
+    return -ENOSYS;
+}
+
+SyscallReturn
 ignoreWarnOnceFunc(SyscallDesc *desc, ThreadContext *tc)
 {
     static std::unordered_map<SyscallDesc *, bool> bool_map;
