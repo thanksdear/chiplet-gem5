@@ -65,6 +65,9 @@ struct UserDesc32
 SyscallReturn setThreadArea32Func(SyscallDesc *desc, ThreadContext *tc,
                                   VPtr<UserDesc32> userDesc);
 
+SyscallReturn getrandomFunc(SyscallDesc *desc, ThreadContext *tc,
+                             VPtr<> buf, size_t buflen, unsigned int flags);
+
 } // namespace X86ISA
 } // namespace gem5
 

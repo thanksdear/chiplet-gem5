@@ -365,7 +365,7 @@ SyscallDescTable<EmuLinux::SyscallABI64> EmuLinux::syscallDescs64 = {
     { 315, "sched_getattr" },
     { 316, "renameat2" },
     { 317, "seccomp" },
-    { 318, "getrandom" },
+    { 318, "getrandom", getrandomFunc },
     { 319, "memfd_create" },
     { 320, "kexec_file_load" },
     { 321, "bpf" },

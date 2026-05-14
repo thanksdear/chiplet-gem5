@@ -27,6 +27,9 @@
 
 #include "arch/x86/linux/syscalls.hh"
 
+#include <cstdlib>
+#include <vector>
+
 #include "arch/x86/linux/linux.hh"
 #include "arch/x86/process.hh"
 #include "arch/x86/regs/misc.hh"
@@ -172,6 +175,18 @@ setThreadArea32Func(SyscallDesc *desc, ThreadContext *tc,
         panic("Failed to copy out GDT for %s.\n", desc->name());
 
     return 0;
+}
+
+SyscallReturn
+getrandomFunc(SyscallDesc *desc, ThreadContext *tc,
+              VPtr<> buf, size_t buflen, unsigned int flags)
+{
+    SETranslatingPortProxy p(tc);
+    std::vector<uint8_t> data(buflen);
+    for (size_t i = 0; i < buflen; i++)
+        data[i] = rand() & 0xff;
+    p.writeBlob(buf, data.data(), buflen);
+    return buflen;
 }
 
 } // namespace X86ISA
