@@ -114,7 +114,8 @@ Router::init()
                 int vc_base = data_vnet * ou->getVcsPerVnet();
                 int vc_end = vc_base + ou->getVcsPerVnet();
                 ou->initHealthMonitor(stall_threshold,
-                                      vc_base, vc_end);
+                                      vc_base, vc_end,
+                                      m_network_ptr->getHealthMonitorAlpha());
             }
         }
     }

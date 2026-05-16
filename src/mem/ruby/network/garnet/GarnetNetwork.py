@@ -58,6 +58,9 @@ class GarnetNetwork(RubyNetwork):
                               "quantized score change threshold for immediate broadcast")
     up_health_monitor_enabled = Param.Bool(True,
                               "enable Up port health monitor (disable for Down-only health)")
+    health_monitor_alpha = Param.Float(0.5,
+                              "credit-ratio weight alpha in channel health "
+                              "score S (range [0.0, 1.0])")
 
 class GarnetNetworkInterface(ClockedObject):
     type = 'GarnetNetworkInterface'

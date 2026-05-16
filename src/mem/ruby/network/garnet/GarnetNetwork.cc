@@ -74,6 +74,7 @@ GarnetNetwork::GarnetNetwork(const Params &p)
     m_health_monitor_broadcast_interval = p.health_monitor_broadcast_interval;
     m_health_monitor_change_threshold = p.health_monitor_change_threshold;
     m_up_health_monitor_enabled = p.up_health_monitor_enabled;
+    m_health_monitor_alpha = p.health_monitor_alpha;
 
     m_enable_fault_model = p.enable_fault_model;
     if (m_enable_fault_model)
