@@ -88,6 +88,11 @@ def define_options(parser):
         "--up-health-monitor", action="store",
         type=int, default=1,
         help="enable Up port health monitor (0=Down-only, 1=Up+Down)")
+    parser.add_argument(
+        "--health-monitor-alpha", action="store",
+        type=float, default=0.5,
+        help="alpha weight for credit ratio in health score "
+             "S=alpha*(C_free/C_total)+(1-alpha)*(1-T_stall/T_max)")
 
 def create_network(options, ruby):
 
@@ -131,6 +136,7 @@ def init_network(options, network, InterfaceClass):
         network.garnet_deadlock_threshold = options.garnet_deadlock_threshold
         network.interposer_stall_threshold = options.interposer_stall_threshold
         network.up_health_monitor_enabled = bool(options.up_health_monitor)
+        network.health_monitor_alpha = options.health_monitor_alpha
 
         # Create Bridges and connect them to the corresponding links
         for intLink in network.int_links:
