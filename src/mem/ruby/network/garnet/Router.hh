@@ -218,7 +218,8 @@ class Router : public BasicRouter, public Consumer
     int m_chiplet_id = -1;               // which chiplet this router serves
     std::vector<Router*> m_chiplet_peers; // same-chiplet interposer routers (excluding self)
     std::vector<Router*> m_direct_neighbors; // adjacent interposer routers (E/W/N/S)
-    std::map<int, int> m_neighbor_health_table; // router_id → quantized health score [0,7]
+    // router_id -> quantized health score
+    std::map<int, int> m_neighbor_health_table;
 
     // ----- Adaptive RC statistics (algorithm 4) -----
     int m_arc_at_target = 0;       // flit arrived at its target gateway

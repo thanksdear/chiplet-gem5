@@ -52,6 +52,8 @@ class GarnetNetwork(RubyNetwork):
                               "network-level deadlock threshold")
     interposer_stall_threshold = Param.UInt32(10000,
                               "interposer VC stall cycles for early exit")
+    health_score_bits = Param.UInt32(3,
+                              "bits used to quantize channel health score")
     health_monitor_broadcast_interval = Param.UInt32(50,
                               "periodic broadcast interval in cycles")
     health_monitor_change_threshold = Param.UInt32(1,

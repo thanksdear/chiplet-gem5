@@ -71,10 +71,13 @@ GarnetNetwork::GarnetNetwork(const Params &p)
     m_buffers_per_ctrl_vc = p.buffers_per_ctrl_vc;
     m_routing_algorithm = p.routing_algorithm;
     m_interposer_stall_threshold = p.interposer_stall_threshold;
+    m_health_score_bits = p.health_score_bits;
     m_health_monitor_broadcast_interval = p.health_monitor_broadcast_interval;
     m_health_monitor_change_threshold = p.health_monitor_change_threshold;
     m_up_health_monitor_enabled = p.up_health_monitor_enabled;
     m_health_monitor_alpha = p.health_monitor_alpha;
+    fatal_if(m_health_score_bits < 2 || m_health_score_bits > 4,
+             "health_score_bits must be 2, 3, or 4");
 
     m_enable_fault_model = p.enable_fault_model;
     if (m_enable_fault_model)

@@ -633,7 +633,9 @@ RoutingUnit::outportComputeAdaptiveChipletXY(RouteInfo route,
             m_router->incrArcAtTarget();
 
             // Check Up health using average score
-            int self_score = 7;
+            const int max_score =
+                m_router->get_net_ptr()->getHealthScoreMax();
+            int self_score = max_score;
             for (int i = 0; i < m_router->get_num_outports(); i++) {
                 if (m_router->getOutportDirection(i) == "Up" &&
                     m_router->getOutputUnit(i)->hasHealthMonitor()) {
@@ -668,11 +670,15 @@ RoutingUnit::outportComputeAdaptiveChipletXY(RouteInfo route,
                           << " self_score=" << self_score
                           << " bias=" << bias
                           << " neighbors=" << m_router->getDirectNeighbors().size()
-                          << " health_table_size=" << m_router->getNeighborHealthTable().size();
+                          << " health_table_size="
+                          << m_router->getNeighborHealthTable().size();
                 for (auto *peer : m_router->getDirectNeighbors()) {
-                    int ps = 7;
-                    if (m_router->getNeighborHealthTable().count(peer->get_id()))
-                        ps = m_router->getNeighborHealthTable().at(peer->get_id());
+                    int ps = max_score;
+                    if (m_router->getNeighborHealthTable().count(
+                            peer->get_id())) {
+                        ps = m_router->getNeighborHealthTable().at(
+                            peer->get_id());
+                    }
                     std::cout << " nb_R" << peer->get_id()
                               << "[chip=" << peer->getChipletId()
                               << ",S=" << ps << "]";
@@ -688,7 +694,7 @@ RoutingUnit::outportComputeAdaptiveChipletXY(RouteInfo route,
             for (auto *peer : m_router->getDirectNeighbors()) {
                 if (peer->getChipletId() != m_router->getChipletId())
                     continue;
-                int ps = 7;
+                int ps = max_score;
                 if (m_router->getNeighborHealthTable().count(peer->get_id()))
                     ps = m_router->getNeighborHealthTable().at(
                         peer->get_id());

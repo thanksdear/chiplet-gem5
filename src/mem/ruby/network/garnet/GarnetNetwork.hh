@@ -83,6 +83,9 @@ class GarnetNetwork : public Network
     int getRoutingAlgorithm() const { return m_routing_algorithm; }
     uint32_t getInterposerStallThreshold() const
     { return m_interposer_stall_threshold; }
+    uint32_t getHealthScoreBits() const { return m_health_score_bits; }
+    int getHealthScoreMax() const
+    { return (1U << m_health_score_bits) - 1; }
     uint32_t getHealthMonitorBroadcastInterval() const
     { return m_health_monitor_broadcast_interval; }
     uint32_t getHealthMonitorChangeThreshold() const
@@ -209,6 +212,7 @@ class GarnetNetwork : public Network
     uint32_t m_buffers_per_data_vc;
     int m_routing_algorithm;
     uint32_t m_interposer_stall_threshold;
+    uint32_t m_health_score_bits;
     uint32_t m_health_monitor_broadcast_interval;
     uint32_t m_health_monitor_change_threshold;
     bool m_up_health_monitor_enabled;

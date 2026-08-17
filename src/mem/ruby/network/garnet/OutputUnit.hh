@@ -114,7 +114,7 @@ class OutputUnit : public Consumer
     // vc_start/vc_end: only monitor VCs in [vc_start, vc_end) range (vnet 2)
     void initHealthMonitor(Tick max_stall_threshold,
                            int vc_start, int vc_end,
-                           float alpha = 0.50f);
+                           int max_score, float alpha = 0.50f);
 
     // Update health monitor each cycle; returns true if broadcast needed
     bool updateHealthMonitor(Tick current_tick, int broadcast_interval,
@@ -141,7 +141,7 @@ class OutputUnit : public Consumer
     // Sample health score into histogram (call once per cycle)
     void sampleHealthScore(Tick current_tick);
 
-    // Get histogram: count of each quantized score [0..7]
+    // Get histogram: count of each configured quantized score
     const std::vector<uint64_t>& getHealthScoreHistogram() const
     { return m_health_histogram; }
 
@@ -179,8 +179,9 @@ class OutputUnit : public Consumer
     int m_monitor_vc_end = 0;    // one past last VC to monitor
     int m_monitor_total_credits = 0; // total credits for monitored VCs
 
-    // Histogram of quantized health scores [0..7], index = score
-    std::vector<uint64_t> m_health_histogram = std::vector<uint64_t>(8, 0);
+    int m_health_score_max = 7;
+    // Histogram of quantized health scores, index = score
+    std::vector<uint64_t> m_health_histogram;
 };
 
 } // namespace garnet

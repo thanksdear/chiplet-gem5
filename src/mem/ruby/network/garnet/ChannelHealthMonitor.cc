@@ -43,6 +43,7 @@ namespace garnet
 
 ChannelHealthMonitor::ChannelHealthMonitor(int total_credits,
                                            Tick max_stall_threshold,
+                                           int max_score,
                                            float alpha)
     : m_total_credits(total_credits),
       m_free_credits(total_credits),
@@ -51,12 +52,14 @@ ChannelHealthMonitor::ChannelHealthMonitor(int total_credits,
       m_last_credit_change_time(0),
       m_max_stall_threshold(max_stall_threshold),
       m_alpha(alpha),
-      m_last_broadcast_score(7),
+      m_max_score(max_score),
+      m_last_broadcast_score(max_score),
       m_last_broadcast_time(0),
       m_max_stall_observed(0)
 {
     assert(total_credits > 0);
     assert(max_stall_threshold > 0);
+    assert(max_score > 0);
     assert(alpha >= 0.0f && alpha <= 1.0f);
 }
 
@@ -105,7 +108,7 @@ ChannelHealthMonitor::quantizeScore(Tick current_tick)
         return 0;
 
     float score = computeScore(current_tick);
-    int q = (int)(score * 7.0f);
+    int q = static_cast<int>(score * m_max_score);
     // S=0 is reserved for isChannelDead(), non-dead channel minimum is 1
     return std::max(1, q);
 }
