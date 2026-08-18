@@ -45,7 +45,15 @@ class GarnetNetwork(RubyNetwork):
     buffers_per_data_vc = Param.UInt32(4, "buffers per data virtual channel");
     buffers_per_ctrl_vc = Param.UInt32(1, "buffers per ctrl virtual channel");
     routing_algorithm = Param.Int(0,
-        "0: Weight-based Table, 1: XY, 2: Custom");
+        "0: Table, 1: XY, 2: Custom, 3: Chiplet XY, 4: Adaptive, "
+        "5: MTR, 6: RC, 7: IPDR, 8: LBDR-lite");
+    lbdr_gateway_map = VectorParam.Int(
+        [0, 0, 1, 1,
+         0, 0, 1, 1,
+         2, 2, 3, 3,
+         2, 2, 3, 3],
+        "LBDR-lite source/destination local-router to gateway map; "
+        "16 entries in [0,3]")
     enable_fault_model = Param.Bool(False, "enable network fault model");
     fault_model = Param.FaultModel(NULL, "network fault model");
     garnet_deadlock_threshold = Param.UInt32(50000,
