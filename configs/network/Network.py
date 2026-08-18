@@ -70,7 +70,14 @@ def define_options(parser):
         help="""routing algorithm in network.
             0: weight-based table
             1: XY (for Mesh. see garnet/RoutingUnit.cc)
-            2: Custom (see garnet/RoutingUnit.cc""")
+            2: Custom (see garnet/RoutingUnit.cc)
+            3: Chiplet XY, 4: Adaptive, 5: MTR, 6: RC, 7: IPDR
+            8: LBDR-lite static load-balanced binding""")
+    parser.add_argument(
+        "--lbdr-gateway-map", action="store", type=str,
+        default="0,0,1,1,0,0,1,1,2,2,3,3,2,2,3,3",
+        help="comma-separated gateway indices for local routers 0-15; "
+             "used by routing algorithm 8")
     parser.add_argument(
         "--network-fault-model", action="store_true",
         default=False,
@@ -138,6 +145,16 @@ def init_network(options, network, InterfaceClass):
         network.vcs_per_vnet = options.vcs_per_vnet
         network.ni_flit_size = options.link_width_bits / 8
         network.routing_algorithm = options.routing_algorithm
+        try:
+            lbdr_map = [int(value) for value in
+                        options.lbdr_gateway_map.split(",")]
+        except ValueError as error:
+            raise ValueError("--lbdr-gateway-map must contain integers") \
+                from error
+        if len(lbdr_map) != 16 or any(value not in range(4)
+                                      for value in lbdr_map):
+            raise ValueError("--lbdr-gateway-map requires 16 values in [0,3]")
+        network.lbdr_gateway_map = lbdr_map
         network.garnet_deadlock_threshold = options.garnet_deadlock_threshold
         network.interposer_stall_threshold = options.interposer_stall_threshold
         network.health_score_bits = options.health_score_bits

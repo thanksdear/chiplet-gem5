@@ -206,6 +206,8 @@ RoutingUnit::outportCompute(RouteInfo route, int inport,
             outportComputeChipletXY(route, inport, inport_dirn); break;
         case IPDR_: outport =
             outportComputeChipletXY(route, inport, inport_dirn); break;
+        case LBDR_: outport =
+            outportComputeLBDR(route, inport, inport_dirn); break;
         default: outport =
             lookupRoutingTable(route.vnet, route.net_dest); break;
     }
@@ -933,6 +935,121 @@ RoutingUnit::outportComputeMTR(RouteInfo route,
     }
 
     return m_outports_dirn2idx.at(xy_dirn(my_lx, my_ly, tgt_lx, tgt_ly));
+}
+
+// Simplified reproduction of LBDR (Cao et al., Integration, 2024).
+//
+// The paper computes source-to-boundary bindings offline, then uses those
+// bindings at run time.  The current Chiplet2_5D topology already fixes four
+// vertical links at the chiplet corners, so this implementation reproduces
+// the binding/routing part, not the paper's boundary-node placement search.
+// The 16-entry binding table is configured with --lbdr-gateway-map.
+// --routing-algorithm=8
+int
+RoutingUnit::outportComputeLBDR(RouteInfo route,
+                                int inport,
+                                PortDirection inport_dirn)
+{
+    static const int CHIPLET_COLS = 4;
+    static const int ROUTERS_PER_CHIPLET = 16;
+    static const int NUM_CHIPLET_ROUTERS = 64;
+    static const int NUM_GATEWAYS = 4;
+    static const int CHIPLET_MESH_COLS = 2;
+    static const int GATEWAY_LOCAL[NUM_GATEWAYS] = {0, 3, 12, 15};
+
+    (void)inport;
+    (void)inport_dirn;
+
+    const int my_id = m_router->get_id();
+    const int dest_id = route.dest_router;
+    const bool is_interposer = m_outports_dirn2idx.count("Up") > 0;
+
+    auto gatewayForLocal = [&](int local_router) {
+        return m_router->get_net_ptr()->getLbdrGateway(local_router);
+    };
+
+    auto interposerId = [&](int chiplet, int gateway) {
+        return NUM_CHIPLET_ROUTERS + chiplet * NUM_GATEWAYS + gateway;
+    };
+
+    auto interposerXY = [&](int router_id, int &x, int &y) {
+        assert(router_id >= NUM_CHIPLET_ROUTERS);
+        const int local_ir = router_id - NUM_CHIPLET_ROUTERS;
+        const int chiplet = local_ir / NUM_GATEWAYS;
+        const int gateway = local_ir % NUM_GATEWAYS;
+        x = (chiplet % CHIPLET_MESH_COLS) * 2 + gateway % 2;
+        y = (chiplet / CHIPLET_MESH_COLS) * 2 + gateway / 2;
+    };
+
+    auto xyDirection = [](int current_x, int current_y,
+                          int target_x, int target_y) -> PortDirection {
+        assert(current_x != target_x || current_y != target_y);
+        if (current_x != target_x)
+            return target_x > current_x ? "East" : "West";
+        return target_y > current_y ? "South" : "North";
+    };
+
+    // Interposer phase: deterministic XY to either the exact interposer
+    // destination or the gateway statically bound to the destination node.
+    if (is_interposer) {
+        int target_ir;
+        if (dest_id >= NUM_CHIPLET_ROUTERS) {
+            target_ir = dest_id;
+        } else {
+            const int dest_chiplet = dest_id / ROUTERS_PER_CHIPLET;
+            const int dest_local = dest_id % ROUTERS_PER_CHIPLET;
+            target_ir = interposerId(dest_chiplet,
+                                      gatewayForLocal(dest_local));
+        }
+
+        if (target_ir == my_id)
+            return m_outports_dirn2idx.at("Up");
+
+        int my_x, my_y, target_x, target_y;
+        interposerXY(my_id, my_x, my_y);
+        interposerXY(target_ir, target_x, target_y);
+        return m_outports_dirn2idx.at(
+            xyDirection(my_x, my_y, target_x, target_y));
+    }
+
+    const int my_chiplet = my_id / ROUTERS_PER_CHIPLET;
+    const int my_local = my_id % ROUTERS_PER_CHIPLET;
+    const int my_x = my_local % CHIPLET_COLS;
+    const int my_y = my_local / CHIPLET_COLS;
+    const bool destination_on_chiplet = dest_id < NUM_CHIPLET_ROUTERS;
+    const bool same_chiplet = destination_on_chiplet &&
+        dest_id / ROUTERS_PER_CHIPLET == my_chiplet;
+
+    // Once a packet has come Up from the interposer, or when communication
+    // stays inside one chiplet, finish with local deterministic XY routing.
+    if (same_chiplet) {
+        const int dest_local = dest_id % ROUTERS_PER_CHIPLET;
+        const int dest_x = dest_local % CHIPLET_COLS;
+        const int dest_y = dest_local / CHIPLET_COLS;
+        return m_outports_dirn2idx.at(
+            xyDirection(my_x, my_y, dest_x, dest_y));
+    }
+
+    // A packet injected on a chiplet uses its source binding for the whole
+    // outbound phase.  This is important: recomputing from the current router
+    // would allow the selected gateway to change while the packet is moving.
+    int source_local = my_local;
+    if (route.src_router >= 0 &&
+        route.src_router < NUM_CHIPLET_ROUTERS) {
+        source_local = route.src_router % ROUTERS_PER_CHIPLET;
+    }
+    const int target_gateway = gatewayForLocal(source_local);
+    const int target_local = GATEWAY_LOCAL[target_gateway];
+
+    // Only the selected boundary may send the packet Down.  A path is allowed
+    // to start at or pass through another corner without descending there.
+    if (my_local == target_local)
+        return m_outports_dirn2idx.at("Down");
+
+    const int target_x = target_local % CHIPLET_COLS;
+    const int target_y = target_local / CHIPLET_COLS;
+    return m_outports_dirn2idx.at(
+        xyDirection(my_x, my_y, target_x, target_y));
 }
 
 } // namespace garnet

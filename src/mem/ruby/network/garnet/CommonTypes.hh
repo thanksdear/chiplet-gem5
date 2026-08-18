@@ -56,6 +56,7 @@ enum RoutingAlgorithm { TABLE_ = 0, XY_ = 1, CUSTOM_ = 2,
                         MTR_ = 5,
                         RC_ = 6,
                         IPDR_ = 7,
+                        LBDR_ = 8,
                         NUM_ROUTING_ALGORITHM_};
 
 struct RouteInfo

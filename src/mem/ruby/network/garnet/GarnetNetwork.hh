@@ -32,6 +32,7 @@
 #ifndef __MEM_RUBY_NETWORK_GARNET_0_GARNETNETWORK_HH__
 #define __MEM_RUBY_NETWORK_GARNET_0_GARNETNETWORK_HH__
 
+#include <cassert>
 #include <deque>
 #include <iostream>
 #include <utility>
@@ -81,6 +82,12 @@ class GarnetNetwork : public Network
     uint32_t getBuffersPerDataVC() { return m_buffers_per_data_vc; }
     uint32_t getBuffersPerCtrlVC() { return m_buffers_per_ctrl_vc; }
     int getRoutingAlgorithm() const { return m_routing_algorithm; }
+    int getLbdrGateway(int local_router) const
+    {
+        assert(local_router >= 0 &&
+               local_router < static_cast<int>(m_lbdr_gateway_map.size()));
+        return m_lbdr_gateway_map[local_router];
+    }
     uint32_t getInterposerStallThreshold() const
     { return m_interposer_stall_threshold; }
     uint32_t getHealthScoreBits() const { return m_health_score_bits; }
@@ -211,6 +218,7 @@ class GarnetNetwork : public Network
     uint32_t m_buffers_per_ctrl_vc;
     uint32_t m_buffers_per_data_vc;
     int m_routing_algorithm;
+    std::vector<int> m_lbdr_gateway_map;
     uint32_t m_interposer_stall_threshold;
     uint32_t m_health_score_bits;
     uint32_t m_health_monitor_broadcast_interval;

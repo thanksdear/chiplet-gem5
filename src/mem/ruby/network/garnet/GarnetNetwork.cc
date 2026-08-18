@@ -35,6 +35,7 @@
 
 #include "base/cast.hh"
 #include "base/compiler.hh"
+#include "base/logging.hh"
 #include "debug/RubyNetwork.hh"
 #include "mem/ruby/common/NetDest.hh"
 #include "mem/ruby/network/MessageBuffer.hh"
@@ -70,6 +71,16 @@ GarnetNetwork::GarnetNetwork(const Params &p)
     m_buffers_per_data_vc = p.buffers_per_data_vc;
     m_buffers_per_ctrl_vc = p.buffers_per_ctrl_vc;
     m_routing_algorithm = p.routing_algorithm;
+    m_lbdr_gateway_map.assign(p.lbdr_gateway_map.begin(),
+                              p.lbdr_gateway_map.end());
+    if (m_lbdr_gateway_map.size() != 16) {
+        fatal("LBDR-lite gateway map must contain exactly 16 entries");
+    }
+    for (const int gateway : m_lbdr_gateway_map) {
+        if (gateway < 0 || gateway >= 4) {
+            fatal("LBDR-lite gateway indices must be in [0,3]");
+        }
+    }
     m_interposer_stall_threshold = p.interposer_stall_threshold;
     m_health_score_bits = p.health_score_bits;
     m_health_monitor_broadcast_interval = p.health_monitor_broadcast_interval;
