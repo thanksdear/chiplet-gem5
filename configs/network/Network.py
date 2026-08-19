@@ -105,6 +105,16 @@ def define_options(parser):
         type=float, default=0.5,
         help="alpha weight for credit ratio in health score "
              "S=alpha*(C_free/C_total)+(1-alpha)*(1-T_stall/T_max)")
+    parser.add_argument(
+        "--health-severe-bias", action="store",
+        type=int, default=1,
+        help="neighbor health-score advantage required for redirection "
+             "when the local score is at most 2 (range 0-7)")
+    parser.add_argument(
+        "--health-moderate-bias", action="store",
+        type=int, default=2,
+        help="neighbor health-score advantage required for redirection "
+             "when the local score is between 3 and 4 (range 0-7)")
 
 def create_network(options, ruby):
 
@@ -160,6 +170,12 @@ def init_network(options, network, InterfaceClass):
         network.health_score_bits = options.health_score_bits
         network.up_health_monitor_enabled = bool(options.up_health_monitor)
         network.health_monitor_alpha = options.health_monitor_alpha
+        if not 0 <= options.health_severe_bias <= 7:
+            raise ValueError("--health-severe-bias must be in [0,7]")
+        if not 0 <= options.health_moderate_bias <= 7:
+            raise ValueError("--health-moderate-bias must be in [0,7]")
+        network.health_severe_bias = options.health_severe_bias
+        network.health_moderate_bias = options.health_moderate_bias
 
         # Create Bridges and connect them to the corresponding links
         for intLink in network.int_links:

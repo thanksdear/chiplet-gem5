@@ -101,6 +101,10 @@ class GarnetNetwork : public Network
     { return m_up_health_monitor_enabled; }
     float getHealthMonitorAlpha() const
     { return m_health_monitor_alpha; }
+    uint32_t getHealthSevereBias() const
+    { return m_health_severe_bias; }
+    uint32_t getHealthModerateBias() const
+    { return m_health_moderate_bias; }
     bool isFaultModelEnabled() const { return m_enable_fault_model; }
     FaultModel* fault_model;
 
@@ -225,6 +229,8 @@ class GarnetNetwork : public Network
     uint32_t m_health_monitor_change_threshold;
     bool m_up_health_monitor_enabled;
     float m_health_monitor_alpha;
+    uint32_t m_health_severe_bias;
+    uint32_t m_health_moderate_bias;
     bool m_enable_fault_model;
 
     // Statistical variables

@@ -87,6 +87,8 @@ GarnetNetwork::GarnetNetwork(const Params &p)
     m_health_monitor_change_threshold = p.health_monitor_change_threshold;
     m_up_health_monitor_enabled = p.up_health_monitor_enabled;
     m_health_monitor_alpha = p.health_monitor_alpha;
+    m_health_severe_bias = p.health_severe_bias;
+    m_health_moderate_bias = p.health_moderate_bias;
     fatal_if(m_health_score_bits < 2 || m_health_score_bits > 4,
              "health_score_bits must be 2, 3, or 4");
 

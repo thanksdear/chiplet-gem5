@@ -647,15 +647,17 @@ RoutingUnit::outportComputeAdaptiveChipletXY(RouteInfo route,
                 }
             }
 
-            // Severity-based LOCAL_BIAS:
-            //   self <= 2 (severe):   bias = 1, aggressive redirect
-            //   self  3-4 (moderate): bias = 2, conservative redirect
+            // Severity-based LOCAL_BIAS. Both thresholds are configurable;
+            // their defaults preserve the original {severe=1, moderate=2}
+            // policy.
             //   self  > 4 (healthy):  no redirect
             int bias;
             if (self_score <= 2) {
-                bias = 1;
+                bias = static_cast<int>(
+                    m_router->get_net_ptr()->getHealthSevereBias());
             } else if (self_score <= 4) {
-                bias = 2;
+                bias = static_cast<int>(
+                    m_router->get_net_ptr()->getHealthModerateBias());
             } else {
                 // Healthy, go Up directly
                 m_router->incrArcHealthy();

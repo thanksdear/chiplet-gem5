@@ -71,6 +71,12 @@ class GarnetNetwork(RubyNetwork):
     health_monitor_alpha = Param.Float(0.5,
                               "credit-ratio weight alpha in channel health "
                               "score S (range [0.0, 1.0])")
+    health_severe_bias = Param.UInt32(1,
+                              "neighbor-score bias used when local health "
+                              "score is at most 2")
+    health_moderate_bias = Param.UInt32(2,
+                              "neighbor-score bias used when local health "
+                              "score is between 3 and 4")
 
 class GarnetNetworkInterface(ClockedObject):
     type = 'GarnetNetworkInterface'
