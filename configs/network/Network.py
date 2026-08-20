@@ -79,6 +79,15 @@ def define_options(parser):
         help="comma-separated gateway indices for local routers 0-15; "
              "used by routing algorithm 8")
     parser.add_argument(
+        "--num-chiplets", action="store", type=int, default=4,
+        help="number of chiplets in the scalable 2.5D topology")
+    parser.add_argument(
+        "--chiplet-mesh-rows", action="store", type=int, default=2,
+        help="number of chiplet rows in the package")
+    parser.add_argument(
+        "--chiplet-mesh-cols", action="store", type=int, default=2,
+        help="number of chiplet columns in the package")
+    parser.add_argument(
         "--network-fault-model", action="store_true",
         default=False,
         help="""enable network fault model:
@@ -100,6 +109,16 @@ def define_options(parser):
         type=float, default=0.5,
         help="alpha weight for credit ratio in health score "
              "S=alpha*(C_free/C_total)+(1-alpha)*(1-T_stall/T_max)")
+    parser.add_argument(
+        "--health-severe-bias", action="store",
+        type=int, default=1,
+        help="neighbor health-score advantage required for redirection "
+             "when the local score is at most 2 (range 0-7)")
+    parser.add_argument(
+        "--health-moderate-bias", action="store",
+        type=int, default=2,
+        help="neighbor health-score advantage required for redirection "
+             "when the local score is between 3 and 4 (range 0-7)")
 
 def create_network(options, ruby):
 
@@ -140,6 +159,19 @@ def init_network(options, network, InterfaceClass):
         network.vcs_per_vnet = options.vcs_per_vnet
         network.ni_flit_size = options.link_width_bits / 8
         network.routing_algorithm = options.routing_algorithm
+        if options.num_chiplets <= 0:
+            raise ValueError("--num-chiplets must be positive")
+        if (options.chiplet_mesh_rows <= 0 or
+                options.chiplet_mesh_cols <= 0):
+            raise ValueError(
+                "--chiplet-mesh-rows/cols must both be positive")
+        if (options.chiplet_mesh_rows * options.chiplet_mesh_cols !=
+                options.num_chiplets):
+            raise ValueError(
+                "chiplet mesh rows*cols must equal --num-chiplets")
+        network.num_chiplets = options.num_chiplets
+        network.chiplet_mesh_rows = options.chiplet_mesh_rows
+        network.chiplet_mesh_cols = options.chiplet_mesh_cols
         try:
             lbdr_map = [int(value) for value in
                         options.lbdr_gateway_map.split(",")]
@@ -154,6 +186,12 @@ def init_network(options, network, InterfaceClass):
         network.interposer_stall_threshold = options.interposer_stall_threshold
         network.up_health_monitor_enabled = bool(options.up_health_monitor)
         network.health_monitor_alpha = options.health_monitor_alpha
+        if not 0 <= options.health_severe_bias <= 7:
+            raise ValueError("--health-severe-bias must be in [0,7]")
+        if not 0 <= options.health_moderate_bias <= 7:
+            raise ValueError("--health-moderate-bias must be in [0,7]")
+        network.health_severe_bias = options.health_severe_bias
+        network.health_moderate_bias = options.health_moderate_bias
 
         # Create Bridges and connect them to the corresponding links
         for intLink in network.int_links:

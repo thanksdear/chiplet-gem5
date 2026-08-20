@@ -47,6 +47,12 @@ class GarnetNetwork(RubyNetwork):
     routing_algorithm = Param.Int(0,
         "0: Table, 1: XY, 2: Custom, 3: Chiplet XY, 4: Adaptive, "
         "5: MTR, 6: RC, 7: IPDR, 8: LBDR-lite");
+    num_chiplets = Param.UInt32(4,
+        "number of chiplets in the scalable 2.5D topology")
+    chiplet_mesh_rows = Param.UInt32(2,
+        "number of chiplet rows in the package")
+    chiplet_mesh_cols = Param.UInt32(2,
+        "number of chiplet columns in the package")
     lbdr_gateway_map = VectorParam.Int(
         [0, 0, 1, 1,
          0, 0, 1, 1,
@@ -69,6 +75,12 @@ class GarnetNetwork(RubyNetwork):
     health_monitor_alpha = Param.Float(0.5,
                               "credit-ratio weight alpha in channel health "
                               "score S (range [0.0, 1.0])")
+    health_severe_bias = Param.UInt32(1,
+                              "neighbor-score bias used when local health "
+                              "score is at most 2")
+    health_moderate_bias = Param.UInt32(2,
+                              "neighbor-score bias used when local health "
+                              "score is between 3 and 4")
 
 class GarnetNetworkInterface(ClockedObject):
     type = 'GarnetNetworkInterface'

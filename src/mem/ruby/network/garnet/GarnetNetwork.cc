@@ -71,6 +71,16 @@ GarnetNetwork::GarnetNetwork(const Params &p)
     m_buffers_per_data_vc = p.buffers_per_data_vc;
     m_buffers_per_ctrl_vc = p.buffers_per_ctrl_vc;
     m_routing_algorithm = p.routing_algorithm;
+    m_num_chiplets = p.num_chiplets;
+    m_chiplet_mesh_rows = p.chiplet_mesh_rows;
+    m_chiplet_mesh_cols = p.chiplet_mesh_cols;
+    fatal_if(m_num_chiplets == 0,
+             "num_chiplets must be positive");
+    fatal_if(m_chiplet_mesh_rows == 0 || m_chiplet_mesh_cols == 0,
+             "chiplet mesh dimensions must be positive");
+    fatal_if(m_chiplet_mesh_rows * m_chiplet_mesh_cols != m_num_chiplets,
+             "chiplet_mesh_rows * chiplet_mesh_cols must equal "
+             "num_chiplets");
     m_lbdr_gateway_map.assign(p.lbdr_gateway_map.begin(),
                               p.lbdr_gateway_map.end());
     if (m_lbdr_gateway_map.size() != 16) {
@@ -86,6 +96,8 @@ GarnetNetwork::GarnetNetwork(const Params &p)
     m_health_monitor_change_threshold = p.health_monitor_change_threshold;
     m_up_health_monitor_enabled = p.up_health_monitor_enabled;
     m_health_monitor_alpha = p.health_monitor_alpha;
+    m_health_severe_bias = p.health_severe_bias;
+    m_health_moderate_bias = p.health_moderate_bias;
 
     m_enable_fault_model = p.enable_fault_model;
     if (m_enable_fault_model)

@@ -36,6 +36,7 @@ class GarnetSyntheticTraffic(ClockedObject):
 
     block_offset = Param.Int(6, "block offset in bits")
     num_dest = Param.Int(1, "Number of Destinations")
+    num_chiplets = Param.Int(4, "Number of chiplets in the package")
     memory_size = Param.Int(65536, "memory size")
     sim_cycles = Param.Int(1000, "Number of simulation cycles")
     num_packets_max = Param.Int(-1, "Max number of packets to send. \

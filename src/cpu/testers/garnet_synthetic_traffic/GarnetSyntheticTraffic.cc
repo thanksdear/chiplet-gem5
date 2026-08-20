@@ -81,6 +81,7 @@ GarnetSyntheticTraffic::GarnetSyntheticTraffic(const Params &p)
       size(p.memory_size),
       blockSizeBits(p.block_offset),
       numDestinations(p.num_dest),
+      numChiplets(p.num_chiplets),
       simCycles(p.sim_cycles),
       numPacketsMax(p.num_packets_max),
       numPacketsSent(0),
@@ -93,6 +94,14 @@ GarnetSyntheticTraffic::GarnetSyntheticTraffic(const Params &p)
       responseLimit(p.response_limit),
       requestorId(p.system->getRequestorId(this))
 {
+    fatal_if(numChiplets <= 0, "num_chiplets must be positive");
+    fatal_if((trafficType == "hotspot" || trafficType == "hotspot_multi") &&
+             numDestinations % numChiplets != 0,
+             "num_dest must be divisible by num_chiplets for hotspot "
+             "traffic");
+    fatal_if(trafficType == "hotspot_multi" && numChiplets < 2,
+             "hotspot_multi requires at least two chiplets");
+
     // set up counters
     noResponseCycles = 0;
     schedule(tickEvent, 0);
@@ -237,18 +246,19 @@ GarnetSyntheticTraffic::generatePkt()
         dest_y = src_y;
         destination = dest_y*radix + dest_x;
     } else if (traffic == HOTSPOT_) {
-        // Hotspot traffic: chiplet 0 <-> chiplet 3 with 60% probability
-        // Each chiplet has 16 nodes (nodes_per_chiplet = num_destinations/4)
-        int nodes_per_chiplet = num_destinations / 4;
+        // Hotspot traffic: opposite-corner chiplets exchange 60% of their
+        // traffic. This is C0 <-> C3 for 2x2 and C0 <-> C7 for 2x4.
+        int nodes_per_chiplet = num_destinations / numChiplets;
         int src_chiplet = source / nodes_per_chiplet;
+        int far_chiplet = numChiplets - 1;
         float r = random_mt.random<unsigned>(0, 99) / 100.0f;
 
         if (src_chiplet == 0 && r < 0.6f) {
-            // Chiplet 0 -> Chiplet 3
-            destination = 3 * nodes_per_chiplet +
+            // Chiplet 0 -> opposite-corner chiplet
+            destination = far_chiplet * nodes_per_chiplet +
                 random_mt.random<unsigned>(0, nodes_per_chiplet - 1);
-        } else if (src_chiplet == 3 && r < 0.6f) {
-            // Chiplet 3 -> Chiplet 0
+        } else if (src_chiplet == far_chiplet && r < 0.6f) {
+            // Opposite-corner chiplet -> Chiplet 0
             destination =
                 random_mt.random<unsigned>(0, nodes_per_chiplet - 1);
         } else {
@@ -257,8 +267,8 @@ GarnetSyntheticTraffic::generatePkt()
                 0, num_destinations - 1);
         }
     } else if (traffic == HOTSPOT_SINGLE_) {
-        // Single-node hotspot: 60% probability all nodes send to node 0
-        // This concentrates traffic on gateway router 64's Up link
+        // Single-node hotspot: 60% probability all nodes send to node 0.
+        // This concentrates traffic on the first interposer gateway's Up link.
         float r = random_mt.random<unsigned>(0, 99) / 100.0f;
         if (r < 0.6f) {
             destination = 0;
@@ -267,19 +277,18 @@ GarnetSyntheticTraffic::generatePkt()
                 0, num_destinations - 1);
         }
     } else if (traffic == HOTSPOT_MULTI_) {
-        // Multi-hotspot: 4 hotspot nodes (center of each chiplet)
+        // Multi-hotspot: one hotspot node (local index 5) per chiplet.
         // 40% send to a hotspot in a DIFFERENT chiplet, 60% uniform
-        int npc = num_destinations / 4;  // nodes per chiplet
-        int hotspots[4] = {5, 5 + npc, 5 + 2*npc, 5 + 3*npc};
+        int npc = num_destinations / numChiplets;
         int src_chiplet = source / npc;
         float r = random_mt.random<unsigned>(0, 99) / 100.0f;
         if (r < 0.4f) {
             // Pick a hotspot in a different chiplet
             int tgt;
             do {
-                tgt = random_mt.random<unsigned>(0, 3);
+                tgt = random_mt.random<unsigned>(0, numChiplets - 1);
             } while (tgt == src_chiplet);
-            destination = hotspots[tgt];
+            destination = tgt * npc + 5;
         } else {
             destination = random_mt.random<unsigned>(
                 0, num_destinations - 1);
