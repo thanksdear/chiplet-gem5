@@ -387,12 +387,16 @@ NetworkInterface::flitisizeMessage(MsgPtr msg_ptr, int vnet)
 
     // RC OPIC: throttle outbound (cross-chiplet) packet injection
     if (m_net_ptr->getRoutingAlgorithm() == RC_) {
+        const int routers_per_chiplet = static_cast<int>(
+            m_net_ptr->getRoutersPerChiplet());
+        const int num_chiplet_routers = static_cast<int>(
+            m_net_ptr->getNumChipletRouters());
         int src_router = oPort->routerID();
-        int src_chiplet = src_router / 16;
+        int src_chiplet = src_router / routers_per_chiplet;
         if (!dest_nodes.empty()) {
             int dest_router = m_net_ptr->get_router_id(dest_nodes[0], vnet);
-            if (dest_router < 64) {
-                int dst_chiplet = dest_router / 16;
+            if (dest_router < num_chiplet_routers) {
+                int dst_chiplet = dest_router / routers_per_chiplet;
                 if (dst_chiplet != src_chiplet) {
                     int boundary = m_net_ptr->rcGetNearestBoundary(src_router);
                     int hop_dist = m_net_ptr->rcGetHopDistance(
@@ -468,10 +472,15 @@ NetworkInterface::flitisizeMessage(MsgPtr msg_ptr, int vnet)
 
             fl->set_src_delay(curTick() - msg_ptr->getTime());
             // IPDR: mark inter-chiplet flits for priority arbitration
-            int src_chip = route.src_router / 16;
-            int dst_chip = route.dest_router / 16;
+            const int routers_per_chiplet = static_cast<int>(
+                m_net_ptr->getRoutersPerChiplet());
+            const int num_chiplet_routers = static_cast<int>(
+                m_net_ptr->getNumChipletRouters());
+            int src_chip = route.src_router / routers_per_chiplet;
+            int dst_chip = route.dest_router / routers_per_chiplet;
             fl->set_inter_chiplet(
-                route.dest_router < 64 && src_chip != dst_chip);
+                route.dest_router < num_chiplet_routers &&
+                src_chip != dst_chip);
             niOutVcs[vc].insert(fl);
         }
 

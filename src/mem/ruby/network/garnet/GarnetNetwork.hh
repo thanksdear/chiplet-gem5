@@ -82,6 +82,19 @@ class GarnetNetwork : public Network
     uint32_t getBuffersPerDataVC() { return m_buffers_per_data_vc; }
     uint32_t getBuffersPerCtrlVC() { return m_buffers_per_ctrl_vc; }
     int getRoutingAlgorithm() const { return m_routing_algorithm; }
+    uint32_t getNumChiplets() const { return m_num_chiplets; }
+    uint32_t getChipletMeshRows() const { return m_chiplet_mesh_rows; }
+    uint32_t getChipletMeshCols() const { return m_chiplet_mesh_cols; }
+    uint32_t getRoutersPerChiplet() const { return 16; }
+    uint32_t getGatewaysPerChiplet() const { return 4; }
+    uint32_t getNumChipletRouters() const
+    { return m_num_chiplets * getRoutersPerChiplet(); }
+    uint32_t getNumInterposerRouters() const
+    { return m_num_chiplets * getGatewaysPerChiplet(); }
+    uint32_t getFirstInterposerRouterId() const
+    { return getNumChipletRouters(); }
+    uint32_t getInterposerMeshCols() const
+    { return m_chiplet_mesh_cols * 2; }
     int getLbdrGateway(int local_router) const
     {
         assert(local_router >= 0 &&
@@ -222,6 +235,9 @@ class GarnetNetwork : public Network
     uint32_t m_buffers_per_ctrl_vc;
     uint32_t m_buffers_per_data_vc;
     int m_routing_algorithm;
+    uint32_t m_num_chiplets;
+    uint32_t m_chiplet_mesh_rows;
+    uint32_t m_chiplet_mesh_cols;
     std::vector<int> m_lbdr_gateway_map;
     uint32_t m_interposer_stall_threshold;
     uint32_t m_health_score_bits;

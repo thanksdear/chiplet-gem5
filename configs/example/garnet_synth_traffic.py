@@ -49,7 +49,7 @@ parser.add_argument("--synthetic", default="uniform_random",
                     choices=['uniform_random', 'tornado', 'bit_complement', \
                              'bit_reverse', 'bit_rotation', 'neighbor', \
                              'shuffle', 'transpose', 'hotspot', \
-                             'hotspot_single'])
+                             'hotspot_single', 'hotspot_multi'])
 
 parser.add_argument("-i", "--injectionrate", type=float, default=0.1,
                     metavar="I",
@@ -98,7 +98,8 @@ cpus = [ GarnetSyntheticTraffic(
                      inj_rate=args.injectionrate,
                      inj_vnet=args.inj_vnet,
                      precision=args.precision,
-                     num_dest=args.num_dirs) \
+                     num_dest=args.num_dirs,
+                     num_chiplets=args.num_chiplets) \
          for i in range(args.num_cpus) ]
 
 # create the desired simulated system

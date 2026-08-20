@@ -99,8 +99,9 @@ Router::init()
         // Convert cycle-based threshold to ticks
         Tick stall_threshold =
             m_network_ptr->getInterposerStallThreshold() * clockPeriod();
-        if (m_id == 64) {
-            std::cout << "[DEBUG] Router 64: stall_threshold_cycles="
+        if (m_id == m_network_ptr->getFirstInterposerRouterId()) {
+            std::cout << "[DEBUG] Router " << m_id
+                      << ": stall_threshold_cycles="
                       << m_network_ptr->getInterposerStallThreshold()
                       << " clockPeriod=" << clockPeriod()
                       << " stall_threshold_ticks=" << stall_threshold
@@ -121,12 +122,16 @@ Router::init()
         }
     }
 
-    // Compute chiplet ID and build peer list for health propagation
-    // Interposer routers 64-79: every 4 routers belong to one chiplet
-    //   C0: 64-67, C1: 68-71, C2: 72-75, C3: 76-79
+    // Compute chiplet ID and build peer lists for health propagation.
+    // Every chiplet owns a fixed group of four interposer gateways; the
+    // first interposer ID depends on the configured number of chiplets.
     if (m_is_interposer) {
-        int base_interposer_id = 64; // first interposer router ID
-        int routers_per_chiplet = 4;
+        const int base_interposer_id = static_cast<int>(
+            m_network_ptr->getFirstInterposerRouterId());
+        const int routers_per_chiplet = static_cast<int>(
+            m_network_ptr->getGatewaysPerChiplet());
+        const int num_interposer_routers = static_cast<int>(
+            m_network_ptr->getNumInterposerRouters());
         m_chiplet_id = (m_id - base_interposer_id) / routers_per_chiplet;
 
         // Build peer list (deferred to after all routers are created)
@@ -143,7 +148,7 @@ Router::init()
 
         // Build direct neighbor list by matching outport links
         // to other interposer routers' input links
-        // Note: use ID range (64-79) instead of isInterposer() because
+        // Use the configured ID range instead of isInterposer() because
         // other routers' init() may not have run yet.
         for (int p = 0; p < (int)m_output_unit.size(); p++) {
             std::string dir = m_output_unit[p]->get_direction();
@@ -153,7 +158,7 @@ Router::init()
                 for (auto *r : m_network_ptr->getRouters()) {
                     int rid = r->get_id();
                     if (rid < base_interposer_id ||
-                        rid >= base_interposer_id + 16 ||
+                        rid >= base_interposer_id + num_interposer_routers ||
                         rid == m_id)
                         continue;
                     for (int ip = 0; ip < r->get_num_inports(); ip++) {

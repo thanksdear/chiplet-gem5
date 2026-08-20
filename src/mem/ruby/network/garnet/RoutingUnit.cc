@@ -285,8 +285,10 @@ RoutingUnit::outportComputeCustom(RouteInfo route,
                                  PortDirection inport_dirn)
 {
     static const int CHIPLET_COLS        = 4;
-    static const int ROUTERS_PER_CHIPLET = 16; // 4x4
-    static const int NUM_CHIPLET_ROUTERS = 64; // 4 chiplets x 16
+    const int ROUTERS_PER_CHIPLET = static_cast<int>(
+        m_router->get_net_ptr()->getRoutersPerChiplet());
+    const int NUM_CHIPLET_ROUTERS = static_cast<int>(
+        m_router->get_net_ptr()->getNumChipletRouters());
 
     int my_id   = m_router->get_id();
     int dest_id = route.dest_router;
@@ -391,11 +393,14 @@ RoutingUnit::outportComputeChipletXY(RouteInfo route,
                                      PortDirection inport_dirn)
 {
     static const int CHIPLET_COLS        = 4;
-    static const int ROUTERS_PER_CHIPLET = 16; // 4x4
-    static const int NUM_CHIPLET_ROUTERS = 64; // 4 chiplets x 16
-    static const int NUM_GATEWAYS        = 4;  // per chiplet
-    static const int CHIPLET_MESH_COLS   = 2;  // 2x2 chiplet grid
-    static const int INTERPOSER_COLS     = 4;  // 4x4 interposer grid
+    const int ROUTERS_PER_CHIPLET = static_cast<int>(
+        m_router->get_net_ptr()->getRoutersPerChiplet());
+    const int NUM_CHIPLET_ROUTERS = static_cast<int>(
+        m_router->get_net_ptr()->getNumChipletRouters());
+    const int NUM_GATEWAYS = static_cast<int>(
+        m_router->get_net_ptr()->getGatewaysPerChiplet());
+    const int CHIPLET_MESH_COLS = static_cast<int>(
+        m_router->get_net_ptr()->getChipletMeshCols());
 
     int my_id   = m_router->get_id();
     int dest_id = route.dest_router;
@@ -549,10 +554,14 @@ RoutingUnit::outportComputeAdaptiveChipletXY(RouteInfo route,
                                               flit *t_flit)
 {
     static const int CHIPLET_COLS        = 4;
-    static const int ROUTERS_PER_CHIPLET = 16;
-    static const int NUM_CHIPLET_ROUTERS = 64;
-    static const int NUM_GATEWAYS        = 4;
-    static const int CHIPLET_MESH_COLS   = 2;
+    const int ROUTERS_PER_CHIPLET = static_cast<int>(
+        m_router->get_net_ptr()->getRoutersPerChiplet());
+    const int NUM_CHIPLET_ROUTERS = static_cast<int>(
+        m_router->get_net_ptr()->getNumChipletRouters());
+    const int NUM_GATEWAYS = static_cast<int>(
+        m_router->get_net_ptr()->getGatewaysPerChiplet());
+    const int CHIPLET_MESH_COLS = static_cast<int>(
+        m_router->get_net_ptr()->getChipletMeshCols());
 
     int my_id   = m_router->get_id();
     int dest_id = route.dest_router;
@@ -668,7 +677,7 @@ RoutingUnit::outportComputeAdaptiveChipletXY(RouteInfo route,
 
             // Debug: print once per router
             static bool debug_printed = false;
-            if (!debug_printed && my_id == 64) {
+            if (!debug_printed && my_id == NUM_CHIPLET_ROUTERS) {
                 debug_printed = true;
                 std::cout << "[ARC-DEBUG] R" << my_id
                           << " self_score=" << self_score
@@ -807,10 +816,14 @@ RoutingUnit::outportComputeMTR(RouteInfo route,
                                PortDirection inport_dirn)
 {
     static const int CHIPLET_COLS        = 4;
-    static const int ROUTERS_PER_CHIPLET = 16;
-    static const int NUM_CHIPLET_ROUTERS = 64;
-    static const int NUM_GATEWAYS        = 4;
-    static const int CHIPLET_MESH_COLS   = 2;
+    const int ROUTERS_PER_CHIPLET = static_cast<int>(
+        m_router->get_net_ptr()->getRoutersPerChiplet());
+    const int NUM_CHIPLET_ROUTERS = static_cast<int>(
+        m_router->get_net_ptr()->getNumChipletRouters());
+    const int NUM_GATEWAYS = static_cast<int>(
+        m_router->get_net_ptr()->getGatewaysPerChiplet());
+    const int CHIPLET_MESH_COLS = static_cast<int>(
+        m_router->get_net_ptr()->getChipletMeshCols());
 
     int my_id   = m_router->get_id();
     int dest_id = route.dest_router;
@@ -953,10 +966,13 @@ RoutingUnit::outportComputeLBDR(RouteInfo route,
                                 PortDirection inport_dirn)
 {
     static const int CHIPLET_COLS = 4;
-    static const int ROUTERS_PER_CHIPLET = 16;
-    static const int NUM_CHIPLET_ROUTERS = 64;
+    const int ROUTERS_PER_CHIPLET = static_cast<int>(
+        m_router->get_net_ptr()->getRoutersPerChiplet());
+    const int NUM_CHIPLET_ROUTERS = static_cast<int>(
+        m_router->get_net_ptr()->getNumChipletRouters());
     static const int NUM_GATEWAYS = 4;
-    static const int CHIPLET_MESH_COLS = 2;
+    const int CHIPLET_MESH_COLS = static_cast<int>(
+        m_router->get_net_ptr()->getChipletMeshCols());
     static const int GATEWAY_LOCAL[NUM_GATEWAYS] = {0, 3, 12, 15};
 
     (void)inport;

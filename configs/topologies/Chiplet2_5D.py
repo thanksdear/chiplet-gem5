@@ -18,9 +18,9 @@ class Chiplet2_5D(SimpleTopology):
     - Chiplets connect to interposer via TSVs
 
     Parameters:
-    - num_chiplets: Number of chiplets (default: 3)
-    - chiplet_rows: Rows per chiplet mesh (default: 2)
-    - chiplet_cols: Columns per chiplet mesh (default: 2)
+    - num_chiplets: Number of chiplets (default: 4)
+    - chiplet_mesh_rows/cols: Package-level chiplet arrangement
+    - chiplet_rows/cols: Rows and columns inside each chiplet (fixed at 4×4)
     - interposer_routing: Interposer routing topology ("mesh" or "crossbar")
     """
 
@@ -33,12 +33,21 @@ class Chiplet2_5D(SimpleTopology):
         nodes = self.nodes
 
         # Configuration parameters
-        num_chiplets = 4  # 4 chiplets in 2×2 mesh
-        chiplet_mesh_rows = 2  # Chiplets arranged in 2×2 grid
-        chiplet_mesh_cols = 2
+        num_chiplets = options.num_chiplets
+        chiplet_mesh_rows = options.chiplet_mesh_rows
+        chiplet_mesh_cols = options.chiplet_mesh_cols
         chiplet_rows = 4  # Each chiplet: 4×4 PEs
         chiplet_cols = 4
         routers_per_chiplet = chiplet_rows * chiplet_cols  # 16 routers/chiplet
+
+        if chiplet_mesh_rows * chiplet_mesh_cols != num_chiplets:
+            raise ValueError(
+                "chiplet mesh rows*cols must equal the number of chiplets")
+        expected_cpus = num_chiplets * routers_per_chiplet
+        if options.num_cpus != expected_cpus:
+            raise ValueError(
+                f"Chiplet2_5D with {num_chiplets} chiplets requires "
+                f"--num-cpus={expected_cpus}, got {options.num_cpus}")
 
         # Latency parameters (in cycles)
         chiplet_link_latency = 1      # Intra-chiplet link latency
@@ -63,11 +72,11 @@ class Chiplet2_5D(SimpleTopology):
         # Create all routers
         routers = []
 
-        # Chiplet routers (ID: 0-63)
+        # Chiplet routers start at ID 0.
         for i in range(num_chiplet_routers):
             routers.append(Router(router_id=i, latency=router_latency))
 
-        # Interposer routers (ID: 64-79)
+        # Interposer routers follow all chiplet routers.
         for i in range(num_interposer_routers):
             router_id = num_chiplet_routers + i
             routers.append(Router(router_id=router_id, latency=router_latency))
@@ -260,14 +269,13 @@ class Chiplet2_5D(SimpleTopology):
         # Part 3: Interposer mesh connections (medium latency)
         # ================================================================
         print(f"[Chiplet2_5D] Creating interposer mesh")
-        print(f"[Chiplet2_5D] Interposer topology: {chiplet_mesh_rows}×{chiplet_mesh_cols} chiplet mesh "
-              f"× 4 gateways = 2×2×4 structure")
+        print(f"[Chiplet2_5D] Interposer topology: "
+              f"{chiplet_mesh_rows}×{chiplet_mesh_cols} chiplet mesh "
+              f"× 4 gateways = {chiplet_mesh_rows * 2}×"
+              f"{chiplet_mesh_cols * 2} interposer mesh")
 
-        # Interposer routers organized as 2×2 chiplet mesh, each with 4 gateways:
-        # Chiplet layout (2×2):
-        #   Chiplet 0  Chiplet 1
-        #   Chiplet 2  Chiplet 3
-        #
+        # Interposer routers are organized as a configurable chiplet mesh,
+        # with a 2×2 group of four gateway routers assigned to each chiplet.
         # Each chiplet has 4 interposer routers (one per corner gateway):
         #   Chiplet 0: IR64-67   Chiplet 1: IR68-71
         #   Chiplet 2: IR72-75   Chiplet 3: IR76-79
@@ -314,15 +322,13 @@ class Chiplet2_5D(SimpleTopology):
                     latency=interposer_link_latency, weight=3))
                 link_count += 1
 
-        # Part 3b: Inter-chiplet interposer connections (2×2 mesh)
+        # Part 3b: Inter-chiplet interposer mesh connections
         # Connect facing sides of adjacent chiplets' interposer squares:
         #   East neighbor : left chiplet's TR(1),BR(3)  ↔  right chiplet's TL(0),BL(2)
         #   South neighbor: top chiplet's  BL(2),BR(3)  ↔  bottom chiplet's TL(0),TR(1)
         #
-        # Chiplet layout:
-        #   [0,0]=C0  [0,1]=C1
-        #   [1,0]=C2  [1,1]=C3
-        print(f"[Chiplet2_5D]   Creating inter-chiplet interposer mesh (2×2, facing sides)")
+        print(f"[Chiplet2_5D]   Creating inter-chiplet interposer mesh "
+              f"({chiplet_mesh_rows}×{chiplet_mesh_cols}, facing sides)")
 
         for chiplet_row in range(chiplet_mesh_rows):
             for chiplet_col in range(chiplet_mesh_cols):

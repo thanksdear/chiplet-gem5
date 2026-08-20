@@ -47,6 +47,12 @@ class GarnetNetwork(RubyNetwork):
     routing_algorithm = Param.Int(0,
         "0: Table, 1: XY, 2: Custom, 3: Chiplet XY, 4: Adaptive, "
         "5: MTR, 6: RC, 7: IPDR, 8: LBDR-lite");
+    num_chiplets = Param.UInt32(4,
+        "number of chiplets in the scalable 2.5D topology")
+    chiplet_mesh_rows = Param.UInt32(2,
+        "number of chiplet rows in the package")
+    chiplet_mesh_cols = Param.UInt32(2,
+        "number of chiplet columns in the package")
     lbdr_gateway_map = VectorParam.Int(
         [0, 0, 1, 1,
          0, 0, 1, 1,
