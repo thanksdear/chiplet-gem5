@@ -196,21 +196,29 @@ class GarnetNetwork : public Network
 
     void update_traffic_distribution(RouteInfo route);
 
-    // RC OPIC: simplified injection control for RC baseline
-    // Tracks rc_buffer occupancy per boundary router (4 chiplets * 4 gateways)
+    // RC OPIC: simplified injection control for RC baseline.
+    // One occupancy counter is maintained for every interposer boundary
+    // router.
     bool rcTryReserve(int boundary_idx, Tick now, Tick release_at);
     int rcGetNearestBoundary(int router_id) const;
     int rcGetHopDistance(int router_id, int boundary_idx) const;
 
     // IPDR: Inter-Chiplet Priority-Driven Deadlock Resolution
     enum IpdrState { IPDR_IDLE, IPDR_DD, IPDR_RECOVERY };
-    static const int IPDR_NUM_BOUNDARIES = 16;
     static const int IPDR_DD_THRESHOLD = 50;
     static const int IPDR_BUFFER_CAPACITY = 8;
     IpdrState ipdrGetState(int boundary_idx) const
-    { return m_ipdr_state[boundary_idx]; }
+    {
+        assert(boundary_idx >= 0 &&
+               boundary_idx < static_cast<int>(m_ipdr_state.size()));
+        return m_ipdr_state[boundary_idx];
+    }
     int ipdrGetDdCounter(int boundary_idx) const
-    { return m_ipdr_dd_counter[boundary_idx]; }
+    {
+        assert(boundary_idx >= 0 &&
+               boundary_idx < static_cast<int>(m_ipdr_dd_counter.size()));
+        return m_ipdr_dd_counter[boundary_idx];
+    }
     bool ipdrIsGlobalRecovery() const { return m_ipdr_global_recovery; }
     void ipdrSetGlobalRecovery(bool v) { m_ipdr_global_recovery = v; }
     void ipdrIncrementDd(int boundary_idx);
@@ -218,13 +226,30 @@ class GarnetNetwork : public Network
     void ipdrEnterRecovery(int boundary_idx);
     void ipdrFinishRecovery(int boundary_idx);
     bool ipdrBufferHasSpace(int boundary_idx) const
-    { return m_ipdr_buffer_used[boundary_idx] < IPDR_BUFFER_CAPACITY; }
+    {
+        assert(boundary_idx >= 0 &&
+               boundary_idx < static_cast<int>(m_ipdr_buffer_used.size()));
+        return m_ipdr_buffer_used[boundary_idx] < IPDR_BUFFER_CAPACITY;
+    }
     void ipdrBufferInsert(int boundary_idx)
-    { m_ipdr_buffer_used[boundary_idx]++; }
+    {
+        assert(boundary_idx >= 0 &&
+               boundary_idx < static_cast<int>(m_ipdr_buffer_used.size()));
+        m_ipdr_buffer_used[boundary_idx]++;
+    }
     void ipdrBufferRemove(int boundary_idx)
-    { if (m_ipdr_buffer_used[boundary_idx] > 0) m_ipdr_buffer_used[boundary_idx]--; }
+    {
+        assert(boundary_idx >= 0 &&
+               boundary_idx < static_cast<int>(m_ipdr_buffer_used.size()));
+        if (m_ipdr_buffer_used[boundary_idx] > 0)
+            m_ipdr_buffer_used[boundary_idx]--;
+    }
     int ipdrBufferUsed(int boundary_idx) const
-    { return m_ipdr_buffer_used[boundary_idx]; }
+    {
+        assert(boundary_idx >= 0 &&
+               boundary_idx < static_cast<int>(m_ipdr_buffer_used.size()));
+        return m_ipdr_buffer_used[boundary_idx];
+    }
 
   protected:
     // Configuration
@@ -296,17 +321,16 @@ class GarnetNetwork : public Network
 
     // RC OPIC state
     static const int RC_BUFFER_CAPACITY = 4;
-    static const int RC_NUM_BOUNDARIES = 16;
     static const int RC_ROUTERS_PER_CHIPLET = 16;
     static const int RC_NUM_GATEWAYS = 4;
     static const int RC_CHIPLET_COLS = 4;
-    int m_rc_available[RC_NUM_BOUNDARIES];
+    std::vector<int> m_rc_available;
     std::deque<std::pair<Tick, int>> m_rc_release_queue;
 
     // IPDR state
-    IpdrState m_ipdr_state[IPDR_NUM_BOUNDARIES];
-    int m_ipdr_dd_counter[IPDR_NUM_BOUNDARIES];
-    int m_ipdr_buffer_used[IPDR_NUM_BOUNDARIES];
+    std::vector<IpdrState> m_ipdr_state;
+    std::vector<int> m_ipdr_dd_counter;
+    std::vector<int> m_ipdr_buffer_used;
     bool m_ipdr_global_recovery;
 };
 

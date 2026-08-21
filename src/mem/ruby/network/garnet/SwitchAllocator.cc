@@ -340,8 +340,15 @@ SwitchAllocator::send_allowed(int inport, int invc, int outport, int outvc)
             flit *t_flit = input_unit->peekTopFlit(invc);
             if (t_flit->get_type() == HEAD_
                     || t_flit->get_type() == HEAD_TAIL_) {
-                int ipdr_idx = m_router->get_id() - 64;
-                if (ipdr_idx >= 0 && ipdr_idx < 16) {
+                const int first_interposer = static_cast<int>(
+                    m_router->get_net_ptr()
+                        ->getFirstInterposerRouterId());
+                const int num_interposer = static_cast<int>(
+                    m_router->get_net_ptr()
+                        ->getNumInterposerRouters());
+                const int ipdr_idx =
+                    m_router->get_id() - first_interposer;
+                if (ipdr_idx >= 0 && ipdr_idx < num_interposer) {
                     if (m_router->get_net_ptr()
                             ->ipdrBufferHasSpace(ipdr_idx)) {
                         m_router->get_net_ptr()

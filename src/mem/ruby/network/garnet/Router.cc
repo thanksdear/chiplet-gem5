@@ -331,8 +331,12 @@ Router::wakeup()
 
         // --- IPDR deadlock detection (routing algorithm 7) ---
         if (m_network_ptr->getRoutingAlgorithm() == IPDR_) {
-            int ipdr_idx = m_id - 64; // boundary index 0-15
-            if (ipdr_idx >= 0 && ipdr_idx < 16) {
+            const int first_interposer = static_cast<int>(
+                m_network_ptr->getFirstInterposerRouterId());
+            const int num_interposer = static_cast<int>(
+                m_network_ptr->getNumInterposerRouters());
+            const int ipdr_idx = m_id - first_interposer;
+            if (ipdr_idx >= 0 && ipdr_idx < num_interposer) {
                 if (any_output_stall) {
                     // Up output congested: increment dd_counter
                     m_network_ptr->ipdrIncrementDd(ipdr_idx);

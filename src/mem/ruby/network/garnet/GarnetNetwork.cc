@@ -133,17 +133,17 @@ GarnetNetwork::GarnetNetwork(const Params &p)
         ni->init_net_ptr(this);
     }
 
-    // RC OPIC init
-    for (int i = 0; i < RC_NUM_BOUNDARIES; i++)
-        m_rc_available[i] = RC_BUFFER_CAPACITY;
+    const int num_boundaries =
+        static_cast<int>(getNumInterposerRouters());
+
+    // RC OPIC init: four boundary routers per chiplet.
+    m_rc_available.assign(num_boundaries, RC_BUFFER_CAPACITY);
 
     // IPDR init
     m_ipdr_global_recovery = false;
-    for (int i = 0; i < IPDR_NUM_BOUNDARIES; i++) {
-        m_ipdr_state[i] = IPDR_IDLE;
-        m_ipdr_dd_counter[i] = 0;
-        m_ipdr_buffer_used[i] = 0;
-    }
+    m_ipdr_state.assign(num_boundaries, IPDR_IDLE);
+    m_ipdr_dd_counter.assign(num_boundaries, 0);
+    m_ipdr_buffer_used.assign(num_boundaries, 0);
 
     // Print Garnet version
     inform("Garnet version %s\n", garnetVersion);
@@ -687,12 +687,21 @@ GarnetNetwork::functionalWrite(Packet *pkt)
 bool
 GarnetNetwork::rcTryReserve(int boundary_idx, Tick now, Tick release_at)
 {
-    // Drain any slots whose release time has passed
-    while (!m_rc_release_queue.empty() &&
-           m_rc_release_queue.front().first <= now) {
-        int idx = m_rc_release_queue.front().second;
-        m_rc_available[idx]++;
-        m_rc_release_queue.pop_front();
+    assert(boundary_idx >= 0 &&
+           boundary_idx < static_cast<int>(m_rc_available.size()));
+
+    // Release times are not necessarily ordered because hop counts differ.
+    for (auto it = m_rc_release_queue.begin();
+         it != m_rc_release_queue.end();) {
+        if (it->first <= now) {
+            const int idx = it->second;
+            assert(idx >= 0 &&
+                   idx < static_cast<int>(m_rc_available.size()));
+            m_rc_available[idx]++;
+            it = m_rc_release_queue.erase(it);
+        } else {
+            ++it;
+        }
     }
 
     if (m_rc_available[boundary_idx] > 0) {
@@ -706,6 +715,8 @@ GarnetNetwork::rcTryReserve(int boundary_idx, Tick now, Tick release_at)
 int
 GarnetNetwork::rcGetNearestBoundary(int router_id) const
 {
+    assert(router_id >= 0 &&
+           router_id < static_cast<int>(getNumChipletRouters()));
     int chiplet = router_id / RC_ROUTERS_PER_CHIPLET;
     int local   = router_id % RC_ROUTERS_PER_CHIPLET;
     int lx = local % RC_CHIPLET_COLS;
@@ -714,12 +725,19 @@ GarnetNetwork::rcGetNearestBoundary(int router_id) const
     int gw_lx = (lx < RC_CHIPLET_COLS / 2) ? 0 : 1;
     int gw_ly = (ly < RC_CHIPLET_COLS / 2) ? 0 : 1;
     int gw_idx = gw_ly * 2 + gw_lx;
-    return chiplet * RC_NUM_GATEWAYS + gw_idx;
+    const int boundary_idx = chiplet * RC_NUM_GATEWAYS + gw_idx;
+    assert(boundary_idx >= 0 &&
+           boundary_idx < static_cast<int>(m_rc_available.size()));
+    return boundary_idx;
 }
 
 int
 GarnetNetwork::rcGetHopDistance(int router_id, int boundary_idx) const
 {
+    assert(router_id >= 0 &&
+           router_id < static_cast<int>(getNumChipletRouters()));
+    assert(boundary_idx >= 0 &&
+           boundary_idx < static_cast<int>(m_rc_available.size()));
     int local  = router_id % RC_ROUTERS_PER_CHIPLET;
     int lx = local % RC_CHIPLET_COLS;
     int ly = local / RC_CHIPLET_COLS;
@@ -734,6 +752,8 @@ GarnetNetwork::rcGetHopDistance(int router_id, int boundary_idx) const
 void
 GarnetNetwork::ipdrIncrementDd(int boundary_idx)
 {
+    assert(boundary_idx >= 0 &&
+           boundary_idx < static_cast<int>(m_ipdr_state.size()));
     if (m_ipdr_state[boundary_idx] == IPDR_IDLE) {
         m_ipdr_dd_counter[boundary_idx]++;
         if (m_ipdr_dd_counter[boundary_idx] >= IPDR_DD_THRESHOLD) {
@@ -745,6 +765,8 @@ GarnetNetwork::ipdrIncrementDd(int boundary_idx)
 void
 GarnetNetwork::ipdrResetDd(int boundary_idx)
 {
+    assert(boundary_idx >= 0 &&
+           boundary_idx < static_cast<int>(m_ipdr_state.size()));
     m_ipdr_dd_counter[boundary_idx] = 0;
     if (m_ipdr_state[boundary_idx] == IPDR_DD)
         m_ipdr_state[boundary_idx] = IPDR_IDLE;
@@ -753,6 +775,8 @@ GarnetNetwork::ipdrResetDd(int boundary_idx)
 void
 GarnetNetwork::ipdrEnterRecovery(int boundary_idx)
 {
+    assert(boundary_idx >= 0 &&
+           boundary_idx < static_cast<int>(m_ipdr_state.size()));
     m_ipdr_state[boundary_idx] = IPDR_RECOVERY;
     m_ipdr_global_recovery = true;
 }
@@ -760,13 +784,15 @@ GarnetNetwork::ipdrEnterRecovery(int boundary_idx)
 void
 GarnetNetwork::ipdrFinishRecovery(int boundary_idx)
 {
+    assert(boundary_idx >= 0 &&
+           boundary_idx < static_cast<int>(m_ipdr_state.size()));
     m_ipdr_state[boundary_idx] = IPDR_IDLE;
     m_ipdr_dd_counter[boundary_idx] = 0;
     m_ipdr_buffer_used[boundary_idx] = 0;
     // Check if any boundary is still in recovery
     bool any_recovery = false;
-    for (int i = 0; i < IPDR_NUM_BOUNDARIES; i++) {
-        if (m_ipdr_state[i] == IPDR_RECOVERY) {
+    for (const auto state : m_ipdr_state) {
+        if (state == IPDR_RECOVERY) {
             any_recovery = true;
             break;
         }
