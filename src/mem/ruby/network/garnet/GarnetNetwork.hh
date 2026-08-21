@@ -320,7 +320,7 @@ class GarnetNetwork : public Network
     std::vector<NetworkInterface *> m_nis;   // All NI's in Network
 
     // RC OPIC state
-    static const int RC_BUFFER_CAPACITY = 4;
+    static constexpr int RC_BUFFER_CAPACITY = 4;
     static const int RC_ROUTERS_PER_CHIPLET = 16;
     static const int RC_NUM_GATEWAYS = 4;
     static const int RC_CHIPLET_COLS = 4;
