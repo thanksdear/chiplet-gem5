@@ -82,6 +82,8 @@ GarnetSyntheticTraffic::GarnetSyntheticTraffic(const Params &p)
       blockSizeBits(p.block_offset),
       numDestinations(p.num_dest),
       numChiplets(p.num_chiplets),
+      trafficRows(p.traffic_rows),
+      trafficCols(p.traffic_cols),
       simCycles(p.sim_cycles),
       numPacketsMax(p.num_packets_max),
       numPacketsSent(0),
@@ -101,6 +103,27 @@ GarnetSyntheticTraffic::GarnetSyntheticTraffic(const Params &p)
              "traffic");
     fatal_if(trafficType == "hotspot_multi" && numChiplets < 2,
              "hotspot_multi requires at least two chiplets");
+    fatal_if((trafficRows == 0) != (trafficCols == 0),
+             "traffic_rows and traffic_cols must either both be zero or "
+             "both be positive");
+
+    if (trafficType == "transpose") {
+        if (trafficRows == 0) {
+            // Preserve the original square-matrix behavior for topologies
+            // that do not provide explicit dimensions.
+            const int radix = static_cast<int>(sqrt(numDestinations));
+            fatal_if(radix * radix != numDestinations,
+                     "transpose requires explicit traffic_rows and "
+                     "traffic_cols when num_dest is not a perfect square");
+            trafficRows = radix;
+            trafficCols = radix;
+        }
+        fatal_if(trafficRows <= 0 || trafficCols <= 0,
+                 "transpose traffic dimensions must be positive");
+        fatal_if(trafficRows * trafficCols != numDestinations,
+                 "traffic_rows * traffic_cols must equal num_dest for "
+                 "transpose traffic");
+    }
 
     // set up counters
     noResponseCycles = 0;
@@ -238,9 +261,13 @@ GarnetSyntheticTraffic::generatePkt()
         else
             destination = (source*2 - num_destinations + 1);
     } else if (traffic == TRANSPOSE_) {
-            dest_x = src_y;
-            dest_y = src_x;
-            destination = dest_y*radix + dest_x;
+        // Matrix-transpose permutation for both square and rectangular
+        // endpoint grids. For an R x C source matrix, element (y, x)
+        // becomes linear index x * R + y in the transposed C x R matrix.
+        const int transpose_x = source % trafficCols;
+        const int transpose_y = source / trafficCols;
+        destination = transpose_x * trafficRows + transpose_y;
+        assert(destination < num_destinations);
     } else if (traffic == TORNADO_) {
         dest_x = (src_x + (int) ceil(radix/2) - 1) % radix;
         dest_y = src_y;

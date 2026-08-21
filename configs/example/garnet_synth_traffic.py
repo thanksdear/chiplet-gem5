@@ -89,6 +89,15 @@ Ruby.define_options(parser)
 
 args = parser.parse_args()
 
+# The chiplet topology numbers routers chiplet-by-chiplet, but synthetic
+# matrix permutations still need the dimensions of the complete endpoint
+# matrix. Each chiplet contains a fixed 4x4 endpoint mesh.
+traffic_rows = 0
+traffic_cols = 0
+if args.topology == "Chiplet2_5D":
+    traffic_rows = args.chiplet_mesh_rows * 4
+    traffic_cols = args.chiplet_mesh_cols * 4
+
 cpus = [ GarnetSyntheticTraffic(
                      num_packets_max=args.num_packets_max,
                      single_sender=args.single_sender_id,
@@ -99,7 +108,9 @@ cpus = [ GarnetSyntheticTraffic(
                      inj_vnet=args.inj_vnet,
                      precision=args.precision,
                      num_dest=args.num_dirs,
-                     num_chiplets=args.num_chiplets) \
+                     num_chiplets=args.num_chiplets,
+                     traffic_rows=traffic_rows,
+                     traffic_cols=traffic_cols) \
          for i in range(args.num_cpus) ]
 
 # create the desired simulated system
