@@ -30,7 +30,7 @@ injection_rate: ${INJECTION_RATE}
 sim_cycles: ${SIM_CYCLES}
 alpha: ${ALPHA}
 bias_3bit_equivalent: (${SEVERE_BIAS},${MODERATE_BIAS})
-metrics: candidate tie rate, gateway decision flip rate
+metric: self/peer candidate tie rate
 =============================================
 EOF
 
@@ -66,7 +66,7 @@ for HEALTH_BITS in 2 3 4; do
     fi
 
     echo "simulation_status:OK" | tee -a "${STATS_FILE}"
-    grep -E "average_flit_latency|health_candidate_(sets|ties|tie_rate)|health_gateway_decision_(comparisons|flips|flip_rate)" \
+    grep -E "average_flit_latency|health_candidate_(sets|ties|tie_rate)" \
         m5out/stats.txt | tee -a "${STATS_FILE}"
 done
 
