@@ -76,6 +76,30 @@ Router::InterposerStats::InterposerStats(statistics::Group *parent)
 {}
 
 void
+Router::recordArcCandidateSet(bool tied)
+{
+    m_network_ptr->recordHealthCandidateSet(tied);
+}
+
+void
+Router::recordArcGatewayDecision(int source_chiplet, int selected_gateway)
+{
+    if (source_chiplet < 0)
+        return;
+
+    auto previous = m_arc_last_gateway_by_source_chiplet.find(
+        source_chiplet);
+    if (previous != m_arc_last_gateway_by_source_chiplet.end()) {
+        m_network_ptr->recordHealthGatewayComparison(
+            previous->second != selected_gateway);
+        previous->second = selected_gateway;
+    } else {
+        m_arc_last_gateway_by_source_chiplet.emplace(
+            source_chiplet, selected_gateway);
+    }
+}
+
+void
 Router::init()
 {
     BasicRouter::init();
@@ -116,6 +140,7 @@ Router::init()
                 int vc_end = vc_base + ou->getVcsPerVnet();
                 ou->initHealthMonitor(stall_threshold,
                                       vc_base, vc_end,
+                                      m_network_ptr->getHealthScoreMax(),
                                       m_network_ptr->getHealthMonitorAlpha());
             }
         }
@@ -523,7 +548,8 @@ Router::wakeup()
             logf.close();
 
             // Reset peer's health score to avoid re-triggering next cycle
-            m_neighbor_health_table[dead_peer_id] = 7;
+            m_neighbor_health_table[dead_peer_id] =
+                m_network_ptr->getHealthScoreMax();
 
             // Set cooldown: skip deadlock detection for a while
             m_recovery_cooldown = curTick()
@@ -784,23 +810,23 @@ Router::collateStats()
                 const auto &hist =
                     m_output_unit[o]->getHealthScoreHistogram();
                 uint64_t total_samples = 0;
-                for (int s = 0; s < 8; s++)
-                    total_samples += hist[s];
+                for (const auto samples : hist)
+                    total_samples += samples;
 
                 std::cout << "  outport" << o
                           << "(Up) health histogram(average)"
                           << " [total=" << total_samples << "]:"
                           << std::endl << "    ";
-                for (int s = 0; s < 8; s++) {
+                for (size_t s = 0; s < hist.size(); ++s) {
                     std::cout << "S" << s << "=" << hist[s];
-                    if (s < 7) std::cout << "  ";
+                    if (s + 1 < hist.size()) std::cout << "  ";
                 }
                 std::cout << std::endl;
 
                 // Print percentage distribution
                 if (total_samples > 0) {
                     std::cout << "    ";
-                    for (int s = 0; s < 8; s++) {
+                    for (size_t s = 0; s < hist.size(); ++s) {
                         float pct = 100.0f * hist[s] / total_samples;
                         if (hist[s] > 0) {
                             std::cout << "S" << s << "="
@@ -830,6 +856,8 @@ Router::collateStats()
 void
 Router::resetStats()
 {
+    m_arc_last_gateway_by_source_chiplet.clear();
+
     for (int i = 0; i < m_input_unit.size(); i++) {
             m_input_unit[i]->resetStats();
     }
@@ -896,7 +924,7 @@ Router::getNeighborHealth(int router_id) const
     auto it = m_neighbor_health_table.find(router_id);
     if (it != m_neighbor_health_table.end())
         return it->second;
-    return 7; // default: assume healthy if unknown
+    return m_network_ptr->getHealthScoreMax();
 }
 
 bool

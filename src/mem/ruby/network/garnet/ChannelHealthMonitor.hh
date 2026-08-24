@@ -48,7 +48,7 @@ class ChannelHealthMonitor
   public:
     // S = alpha * (C_free/C_total) + (1-alpha) * (1 - T_stall/T_max)
     ChannelHealthMonitor(int total_credits, Tick max_stall_threshold,
-                         float alpha = 0.0f);
+                         int max_score, float alpha = 0.0f);
 
     // Called when credit count changes (increment or decrement)
     void recordCreditChange(Tick current_tick);
@@ -59,7 +59,7 @@ class ChannelHealthMonitor
     // Compute health score S in [0.0, 1.0]
     float computeScore(Tick current_tick);
 
-    // Quantize score to [0, 7]
+    // Quantize score to [0, max_score]
     int quantizeScore(Tick current_tick);
 
     // Check if S == 0 (deadlock condition)
@@ -98,6 +98,8 @@ class ChannelHealthMonitor
     Tick m_max_stall_threshold;
     // Weight for credit ratio (stall weight = 1 - alpha)
     float m_alpha;
+    // Largest value representable by the configured health-score width
+    int m_max_score;
     // Last broadcast quantized score
     int m_last_broadcast_score;
     // Last broadcast time

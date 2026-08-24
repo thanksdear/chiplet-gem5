@@ -642,9 +642,20 @@ RoutingUnit::outportComputeAdaptiveChipletXY(RouteInfo route,
 
         if (target_ir == my_id) {
             m_router->incrArcAtTarget();
+            int source_chiplet = -1;
+            if (route.src_router >= 0 &&
+                route.src_router < NUM_CHIPLET_ROUTERS) {
+                source_chiplet = route.src_router / ROUTERS_PER_CHIPLET;
+            }
 
-            // Check Up health using average score
-            int self_score = 7;
+            // Check Up health using average score.  The two severity limits
+            // preserve the original 3-bit boundaries (2/7 and 4/7) for all
+            // configured widths.
+            const int max_score =
+                m_router->get_net_ptr()->getHealthScoreMax();
+            const int severe_limit = (2 * max_score + 3) / 7;
+            const int moderate_limit = (4 * max_score + 3) / 7;
+            int self_score = max_score;
             for (int i = 0; i < m_router->get_num_outports(); i++) {
                 if (m_router->getOutportDirection(i) == "Up" &&
                     m_router->getOutputUnit(i)->hasHealthMonitor()) {
@@ -654,20 +665,28 @@ RoutingUnit::outportComputeAdaptiveChipletXY(RouteInfo route,
                 }
             }
 
-            // Severity-based LOCAL_BIAS. Both thresholds are configurable;
-            // their defaults preserve the original {severe=1, moderate=2}
-            // policy.
-            //   self  > 4 (healthy):  no redirect
+            // Severity-based LOCAL_BIAS.  The configurable bias defaults
+            // preserve the original {severe=1, moderate=2} 3-bit policy.
             int bias;
-            if (self_score <= 2) {
-                bias = static_cast<int>(
+            // Bias arguments are expressed in 3-bit score levels.  Scale
+            // them to the selected representation so the physical health
+            // advantage required for redirection stays comparable.
+            auto scale_bias = [max_score](uint32_t bias_3bit) {
+                if (bias_3bit == 0)
+                    return 0;
+                return static_cast<int>(
+                    (bias_3bit * max_score + 6) / 7);
+            };
+            if (self_score <= severe_limit) {
+                bias = scale_bias(
                     m_router->get_net_ptr()->getHealthSevereBias());
-            } else if (self_score <= 4) {
-                bias = static_cast<int>(
+            } else if (self_score <= moderate_limit) {
+                bias = scale_bias(
                     m_router->get_net_ptr()->getHealthModerateBias());
             } else {
                 // Healthy, go Up directly
                 m_router->incrArcHealthy();
+                m_router->recordArcGatewayDecision(source_chiplet, my_id);
                 return m_outports_dirn2idx.at("Up");
             }
 
@@ -680,12 +699,17 @@ RoutingUnit::outportComputeAdaptiveChipletXY(RouteInfo route,
                 std::cout << "[ARC-DEBUG] R" << my_id
                           << " self_score=" << self_score
                           << " bias=" << bias
-                          << " neighbors=" << m_router->getDirectNeighbors().size()
-                          << " health_table_size=" << m_router->getNeighborHealthTable().size();
+                          << " neighbors="
+                          << m_router->getDirectNeighbors().size()
+                          << " health_table_size="
+                          << m_router->getNeighborHealthTable().size();
                 for (auto *peer : m_router->getDirectNeighbors()) {
-                    int ps = 7;
-                    if (m_router->getNeighborHealthTable().count(peer->get_id()))
-                        ps = m_router->getNeighborHealthTable().at(peer->get_id());
+                    int ps = max_score;
+                    if (m_router->getNeighborHealthTable().count(
+                            peer->get_id())) {
+                        ps = m_router->getNeighborHealthTable().at(
+                            peer->get_id());
+                    }
                     std::cout << " nb_R" << peer->get_id()
                               << "[chip=" << peer->getChipletId()
                               << ",S=" << ps << "]";
@@ -697,36 +721,55 @@ RoutingUnit::outportComputeAdaptiveChipletXY(RouteInfo route,
             // Congested — find a better same-chiplet neighbor
             int best_id = -1;
             int best_score = self_score;
+            int available_candidates = 0;
+            int candidate_max_score = -1;
+            int candidates_at_max = 0;
 
             for (auto *peer : m_router->getDirectNeighbors()) {
                 if (peer->getChipletId() != m_router->getChipletId())
                     continue;
-                int ps = 7;
+                int ps = max_score;
                 if (m_router->getNeighborHealthTable().count(peer->get_id()))
                     ps = m_router->getNeighborHealthTable().at(
                         peer->get_id());
-                if (ps >= self_score + bias) {
-                    // Check lateral link has free VC
-                    int peer_ix, peer_iy;
-                    interposer_xy(peer->get_id(), peer_ix, peer_iy);
-                    PortDirection dirn = xy_dirn(
-                        my_ix, my_iy, peer_ix, peer_iy);
-                    if (m_outports_dirn2idx.count(dirn)) {
-                        int op = m_outports_dirn2idx.at(dirn);
-                        if (m_router->getOutputUnit(op)->has_free_vc(
-                                route.vnet)) {
-                            if (ps > best_score) {
-                                best_score = ps;
-                                best_id = peer->get_id();
-                            }
-                        }
-                    }
+                // A tie sample is based on legal and currently available
+                // candidates, independent of the bias threshold.  Otherwise
+                // coarse quantization could hide ties by filtering both
+                // candidates before the measurement.
+                int peer_ix, peer_iy;
+                interposer_xy(peer->get_id(), peer_ix, peer_iy);
+                PortDirection dirn = xy_dirn(
+                    my_ix, my_iy, peer_ix, peer_iy);
+                if (!m_outports_dirn2idx.count(dirn))
+                    continue;
+
+                int op = m_outports_dirn2idx.at(dirn);
+                if (!m_router->getOutputUnit(op)->has_free_vc(route.vnet))
+                    continue;
+
+                available_candidates++;
+                if (ps > candidate_max_score) {
+                    candidate_max_score = ps;
+                    candidates_at_max = 1;
+                } else if (ps == candidate_max_score) {
+                    candidates_at_max++;
                 }
+
+                if (ps >= self_score + bias && ps > best_score) {
+                    best_score = ps;
+                    best_id = peer->get_id();
+                }
+            }
+
+            if (available_candidates >= 2) {
+                m_router->recordArcCandidateSet(candidates_at_max >= 2);
             }
 
             if (best_id >= 0) {
                 // Redirect to better neighbor
                 m_router->incrArcRedirected();
+                m_router->recordArcGatewayDecision(
+                    source_chiplet, best_id);
                 int best_ix, best_iy;
                 interposer_xy(best_id, best_ix, best_iy);
                 PortDirection dirn = xy_dirn(
@@ -736,6 +779,7 @@ RoutingUnit::outportComputeAdaptiveChipletXY(RouteInfo route,
 
             // No better neighbor, go Up anyway
             m_router->incrArcNoBetter();
+            m_router->recordArcGatewayDecision(source_chiplet, my_id);
             return m_outports_dirn2idx.at("Up");
         }
 

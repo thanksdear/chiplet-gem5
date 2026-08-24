@@ -101,6 +101,11 @@ def define_options(parser):
         type=int, default=10000,
         help="interposer VC stall threshold for early deadlock exit.")
     parser.add_argument(
+        "--health-score-bits", action="store", type=int,
+        choices=(2, 3, 4), default=3,
+        help="number of bits used to quantize the channel health score "
+             "(2, 3, or 4; default: 3)")
+    parser.add_argument(
         "--up-health-monitor", action="store",
         type=int, default=1,
         help="enable Up port health monitor (0=Down-only, 1=Up+Down)")
@@ -184,6 +189,7 @@ def init_network(options, network, InterfaceClass):
         network.lbdr_gateway_map = lbdr_map
         network.garnet_deadlock_threshold = options.garnet_deadlock_threshold
         network.interposer_stall_threshold = options.interposer_stall_threshold
+        network.health_score_bits = options.health_score_bits
         network.up_health_monitor_enabled = bool(options.up_health_monitor)
         network.health_monitor_alpha = options.health_monitor_alpha
         if not 0 <= options.health_severe_bias <= 7:

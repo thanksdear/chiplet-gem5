@@ -103,6 +103,9 @@ class GarnetNetwork : public Network
     }
     uint32_t getInterposerStallThreshold() const
     { return m_interposer_stall_threshold; }
+    uint32_t getHealthScoreBits() const { return m_health_score_bits; }
+    int getHealthScoreMax() const
+    { return (1U << m_health_score_bits) - 1; }
     uint32_t getHealthMonitorBroadcastInterval() const
     { return m_health_monitor_broadcast_interval; }
     uint32_t getHealthMonitorChangeThreshold() const
@@ -153,6 +156,24 @@ class GarnetNetwork : public Network
     void regStats();
     void resetStats();
     void print(std::ostream& out) const;
+
+    // Health-score quantization sensitivity statistics.  A candidate-set
+    // sample contains at least two legal, currently available gateways.
+    void recordHealthCandidateSet(bool tied)
+    {
+        m_health_candidate_sets++;
+        if (tied)
+            m_health_candidate_ties++;
+    }
+
+    // Record a comparison with the previous gateway decision for the same
+    // source-chiplet/target-gateway pair.
+    void recordHealthGatewayComparison(bool flipped)
+    {
+        m_health_gateway_decision_comparisons++;
+        if (flipped)
+            m_health_gateway_decision_flips++;
+    }
 
     // increment counters
     void increment_injected_packets(int vnet) { m_packets_injected[vnet]++; }
@@ -262,6 +283,7 @@ class GarnetNetwork : public Network
     uint32_t m_chiplet_mesh_cols;
     std::vector<int> m_lbdr_gateway_map;
     uint32_t m_interposer_stall_threshold;
+    uint32_t m_health_score_bits;
     uint32_t m_health_monitor_broadcast_interval;
     uint32_t m_health_monitor_change_threshold;
     bool m_up_health_monitor_enabled;
@@ -301,6 +323,14 @@ class GarnetNetwork : public Network
 
     statistics::Scalar  m_total_hops;
     statistics::Formula m_avg_hops;
+
+    // 2/3/4-bit health-score sensitivity metrics.
+    statistics::Scalar m_health_candidate_sets;
+    statistics::Scalar m_health_candidate_ties;
+    statistics::Formula m_health_candidate_tie_rate;
+    statistics::Scalar m_health_gateway_decision_comparisons;
+    statistics::Scalar m_health_gateway_decision_flips;
+    statistics::Formula m_health_gateway_decision_flip_rate;
 
     std::vector<std::vector<statistics::Scalar *>> m_data_traffic_distribution;
     std::vector<std::vector<statistics::Scalar *>> m_ctrl_traffic_distribution;

@@ -92,12 +92,15 @@ GarnetNetwork::GarnetNetwork(const Params &p)
         }
     }
     m_interposer_stall_threshold = p.interposer_stall_threshold;
+    m_health_score_bits = p.health_score_bits;
     m_health_monitor_broadcast_interval = p.health_monitor_broadcast_interval;
     m_health_monitor_change_threshold = p.health_monitor_change_threshold;
     m_up_health_monitor_enabled = p.up_health_monitor_enabled;
     m_health_monitor_alpha = p.health_monitor_alpha;
     m_health_severe_bias = p.health_severe_bias;
     m_health_moderate_bias = p.health_moderate_bias;
+    fatal_if(m_health_score_bits < 2 || m_health_score_bits > 4,
+             "health_score_bits must be 2, 3, or 4");
 
     m_enable_fault_model = p.enable_fault_model;
     if (m_enable_fault_model)
@@ -539,6 +542,36 @@ GarnetNetwork::regStats()
     // Hops
     m_avg_hops.name(name() + ".average_hops");
     m_avg_hops = m_total_hops / sum(m_flits_received);
+
+    // Health-score quantization sensitivity.  Rates are reported as
+    // fractions in [0,1]; the numerator and denominator are also exposed so
+    // that short runs with too few samples are easy to identify.
+    m_health_candidate_sets
+        .name(name() + ".health_candidate_sets")
+        .desc("Adaptive decisions with at least two available gateway "
+              "candidates");
+    m_health_candidate_ties
+        .name(name() + ".health_candidate_ties")
+        .desc("Candidate sets whose maximum quantized health score is tied");
+    m_health_candidate_tie_rate
+        .name(name() + ".health_candidate_tie_rate")
+        .desc("Fraction of eligible candidate sets with a maximum-score tie");
+    m_health_candidate_tie_rate =
+        m_health_candidate_ties / m_health_candidate_sets;
+
+    m_health_gateway_decision_comparisons
+        .name(name() + ".health_gateway_decision_comparisons")
+        .desc("Gateway decisions comparable with a preceding decision for "
+              "the same flow class");
+    m_health_gateway_decision_flips
+        .name(name() + ".health_gateway_decision_flips")
+        .desc("Comparable decisions that select a different gateway");
+    m_health_gateway_decision_flip_rate
+        .name(name() + ".health_gateway_decision_flip_rate")
+        .desc("Fraction of comparable gateway decisions that flip");
+    m_health_gateway_decision_flip_rate =
+        m_health_gateway_decision_flips /
+        m_health_gateway_decision_comparisons;
 
     // Links
     m_total_ext_in_link_utilization

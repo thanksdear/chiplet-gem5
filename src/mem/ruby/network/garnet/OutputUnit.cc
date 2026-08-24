@@ -192,11 +192,13 @@ OutputUnit::functionalWrite(Packet *pkt)
 void
 OutputUnit::initHealthMonitor(Tick max_stall_threshold,
                                int vc_start, int vc_end,
-                               float alpha)
+                               int max_score, float alpha)
 {
     m_monitor_vc_start = vc_start;
     m_monitor_vc_end = vc_end;
     m_monitor_total_credits = 0;
+    m_health_score_max = max_score;
+    m_health_histogram.assign(max_score + 1, 0);
 
     // Create one ChannelHealthMonitor per VC
     for (int vc = vc_start; vc < vc_end; vc++) {
@@ -204,7 +206,7 @@ OutputUnit::initHealthMonitor(Tick max_stall_threshold,
         m_monitor_total_credits += vc_credits;
         m_vc_health_monitors.push_back(
             std::make_unique<ChannelHealthMonitor>(
-                vc_credits, max_stall_threshold, alpha));
+                vc_credits, max_stall_threshold, max_score, alpha));
     }
     m_last_periodic_broadcast = 0;
 }
@@ -253,8 +255,8 @@ int
 OutputUnit::getWorstQuantizedScore(Tick current_tick)
 {
     if (m_vc_health_monitors.empty())
-        return 7;
-    int worst = 7;
+        return m_health_score_max;
+    int worst = m_health_score_max;
     for (auto &mon : m_vc_health_monitors) {
         int s = mon->quantizeScore(current_tick);
         if (s < worst)
@@ -267,7 +269,7 @@ int
 OutputUnit::getAverageQuantizedScore(Tick current_tick)
 {
     if (m_vc_health_monitors.empty())
-        return 7;
+        return m_health_score_max;
     int sum = 0;
     for (auto &mon : m_vc_health_monitors)
         sum += mon->quantizeScore(current_tick);
@@ -314,7 +316,7 @@ int
 OutputUnit::getVcQuantizedScore(int idx, Tick current_tick)
 {
     if (idx < 0 || idx >= (int)m_vc_health_monitors.size())
-        return 7;
+        return m_health_score_max;
     return m_vc_health_monitors[idx]->quantizeScore(current_tick);
 }
 
