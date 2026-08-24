@@ -548,30 +548,17 @@ GarnetNetwork::regStats()
     // that short runs with too few samples are easy to identify.
     m_health_candidate_sets
         .name(name() + ".health_candidate_sets")
-        .desc("Adaptive decisions with at least two available gateway "
-              "candidates");
+        .desc("Adaptive decisions comparing self with at least one "
+              "structurally legal peer gateway");
     m_health_candidate_ties
         .name(name() + ".health_candidate_ties")
-        .desc("Candidate sets whose maximum quantized health score is tied");
+        .desc("Self/peer candidate sets whose maximum quantized health "
+              "score is tied");
     m_health_candidate_tie_rate
         .name(name() + ".health_candidate_tie_rate")
         .desc("Fraction of eligible candidate sets with a maximum-score tie");
     m_health_candidate_tie_rate =
         m_health_candidate_ties / m_health_candidate_sets;
-
-    m_health_gateway_decision_comparisons
-        .name(name() + ".health_gateway_decision_comparisons")
-        .desc("Gateway decisions comparable with a preceding decision for "
-              "the same flow class");
-    m_health_gateway_decision_flips
-        .name(name() + ".health_gateway_decision_flips")
-        .desc("Comparable decisions that select a different gateway");
-    m_health_gateway_decision_flip_rate
-        .name(name() + ".health_gateway_decision_flip_rate")
-        .desc("Fraction of comparable gateway decisions that flip");
-    m_health_gateway_decision_flip_rate =
-        m_health_gateway_decision_flips /
-        m_health_gateway_decision_comparisons;
 
     // Links
     m_total_ext_in_link_utilization

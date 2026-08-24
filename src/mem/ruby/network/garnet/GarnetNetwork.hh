@@ -158,21 +158,12 @@ class GarnetNetwork : public Network
     void print(std::ostream& out) const;
 
     // Health-score quantization sensitivity statistics.  A candidate-set
-    // sample contains at least two legal, currently available gateways.
+    // sample contains self and at least one structurally legal peer gateway.
     void recordHealthCandidateSet(bool tied)
     {
         m_health_candidate_sets++;
         if (tied)
             m_health_candidate_ties++;
-    }
-
-    // Record a comparison with the previous gateway decision for the same
-    // source-chiplet/target-gateway pair.
-    void recordHealthGatewayComparison(bool flipped)
-    {
-        m_health_gateway_decision_comparisons++;
-        if (flipped)
-            m_health_gateway_decision_flips++;
     }
 
     // increment counters
@@ -328,9 +319,6 @@ class GarnetNetwork : public Network
     statistics::Scalar m_health_candidate_sets;
     statistics::Scalar m_health_candidate_ties;
     statistics::Formula m_health_candidate_tie_rate;
-    statistics::Scalar m_health_gateway_decision_comparisons;
-    statistics::Scalar m_health_gateway_decision_flips;
-    statistics::Formula m_health_gateway_decision_flip_rate;
 
     std::vector<std::vector<statistics::Scalar *>> m_data_traffic_distribution;
     std::vector<std::vector<statistics::Scalar *>> m_ctrl_traffic_distribution;
