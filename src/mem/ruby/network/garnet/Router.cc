@@ -76,6 +76,30 @@ Router::InterposerStats::InterposerStats(statistics::Group *parent)
 {}
 
 void
+Router::recordArcCandidateSet(bool tied)
+{
+    m_network_ptr->recordHealthCandidateSet(tied);
+}
+
+void
+Router::recordArcGatewayDecision(int source_chiplet, int selected_gateway)
+{
+    if (source_chiplet < 0)
+        return;
+
+    auto previous = m_arc_last_gateway_by_source_chiplet.find(
+        source_chiplet);
+    if (previous != m_arc_last_gateway_by_source_chiplet.end()) {
+        m_network_ptr->recordHealthGatewayComparison(
+            previous->second != selected_gateway);
+        previous->second = selected_gateway;
+    } else {
+        m_arc_last_gateway_by_source_chiplet.emplace(
+            source_chiplet, selected_gateway);
+    }
+}
+
+void
 Router::init()
 {
     BasicRouter::init();
@@ -832,6 +856,8 @@ Router::collateStats()
 void
 Router::resetStats()
 {
+    m_arc_last_gateway_by_source_chiplet.clear();
+
     for (int i = 0; i < m_input_unit.size(); i++) {
             m_input_unit[i]->resetStats();
     }

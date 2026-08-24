@@ -208,6 +208,9 @@ class Router : public BasicRouter, public Consumer
     void incrArcRedirected() { m_arc_redirected++; }
     void incrArcNoBetter() { m_arc_no_better++; }
     void incrArcAntiLivelock() { m_arc_anti_livelock++; }
+    void recordArcCandidateSet(bool tied);
+    void recordArcGatewayDecision(int source_chiplet,
+                                  int selected_gateway);
 
     // Get the list of same-chiplet interposer router pointers
     const std::vector<Router*>& getChipletPeers() const
@@ -228,6 +231,10 @@ class Router : public BasicRouter, public Consumer
     int m_arc_redirected = 0;      // actually redirected to neighbor
     int m_arc_no_better = 0;       // no better neighbor, go Up anyway
     int m_arc_anti_livelock = 0;   // redirected flit went Up (anti-livelock)
+    // Last choice for each source chiplet.  This Router is itself the fixed
+    // destination gateway, so the key represents a source/destination flow
+    // class without requiring per-packet state in the flit.
+    std::map<int, int> m_arc_last_gateway_by_source_chiplet;
 
     // ----- Recovery cooldown -----
     Tick m_recovery_cooldown = 0;  // skip deadlock detection until this tick

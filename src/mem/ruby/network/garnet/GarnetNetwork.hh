@@ -157,6 +157,24 @@ class GarnetNetwork : public Network
     void resetStats();
     void print(std::ostream& out) const;
 
+    // Health-score quantization sensitivity statistics.  A candidate-set
+    // sample contains at least two legal, currently available gateways.
+    void recordHealthCandidateSet(bool tied)
+    {
+        m_health_candidate_sets++;
+        if (tied)
+            m_health_candidate_ties++;
+    }
+
+    // Record a comparison with the previous gateway decision for the same
+    // source-chiplet/target-gateway pair.
+    void recordHealthGatewayComparison(bool flipped)
+    {
+        m_health_gateway_decision_comparisons++;
+        if (flipped)
+            m_health_gateway_decision_flips++;
+    }
+
     // increment counters
     void increment_injected_packets(int vnet) { m_packets_injected[vnet]++; }
     void increment_received_packets(int vnet) { m_packets_received[vnet]++; }
@@ -305,6 +323,14 @@ class GarnetNetwork : public Network
 
     statistics::Scalar  m_total_hops;
     statistics::Formula m_avg_hops;
+
+    // 2/3/4-bit health-score sensitivity metrics.
+    statistics::Scalar m_health_candidate_sets;
+    statistics::Scalar m_health_candidate_ties;
+    statistics::Formula m_health_candidate_tie_rate;
+    statistics::Scalar m_health_gateway_decision_comparisons;
+    statistics::Scalar m_health_gateway_decision_flips;
+    statistics::Formula m_health_gateway_decision_flip_rate;
 
     std::vector<std::vector<statistics::Scalar *>> m_data_traffic_distribution;
     std::vector<std::vector<statistics::Scalar *>> m_ctrl_traffic_distribution;
