@@ -90,7 +90,7 @@ class Router : public BasicRouter, public Consumer
     uint32_t get_vc_per_vnet()   { return m_vc_per_vnet; }
     int get_num_inports()   { return m_input_unit.size(); }
     int get_num_outports()  { return m_output_unit.size(); }
-    int get_id()            { return m_id; }
+    int get_id() const      { return m_id; }
 
     void init_net_ptr(GarnetNetwork* net_ptr)
     {
@@ -227,9 +227,13 @@ class Router : public BasicRouter, public Consumer
         Tick sent_tick;
         int source_router_id;
         int score;
+        int path_hops;
     };
     std::vector<PendingHealthUpdate> m_pending_health_updates;
+    std::map<int, Tick> m_neighbor_health_sent_tick;
+    std::map<int, int> m_neighbor_health_path_hops;
     Tick m_deadlock_test_health_epoch = 0;
+    int healthPropagationHops(int source_router_id) const;
     void applyPendingHealthScores();
 
     // ----- Adaptive RC statistics (algorithm 4) -----

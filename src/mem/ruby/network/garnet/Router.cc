@@ -34,6 +34,8 @@
 
 #include <fstream>
 #include <iomanip>
+#include <queue>
+#include <set>
 
 #include "debug/RubyNetwork.hh"
 #include "mem/ruby/network/garnet/CreditLink.hh"
@@ -488,6 +490,18 @@ Router::wakeup()
             }
             logf << "  Peer Router " << dead_peer_id
                  << " Up channel dead (S=0)" << std::endl;
+            const auto hop_it =
+                m_neighbor_health_path_hops.find(dead_peer_id);
+            const auto sent_it =
+                m_neighbor_health_sent_tick.find(dead_peer_id);
+            if (hop_it != m_neighbor_health_path_hops.end() &&
+                sent_it != m_neighbor_health_sent_tick.end()) {
+                logf << "  detection_health_path_hops=" << hop_it->second
+                     << " health_sent_tick=" << sent_it->second
+                     << " health_transfer_latency_cycles="
+                     << (curTick() - sent_it->second) / clockPeriod()
+                     << std::endl;
+            }
             Tick stall_threshold =
                 m_network_ptr->getInterposerStallThreshold();
             for (int i = 0; i < (int)m_input_unit.size(); i++) {
@@ -925,12 +939,42 @@ Router::functionalWrite(Packet *pkt)
 void
 Router::receiveHealthScore(int source_router_id, int score)
 {
+    const int path_hops = healthPropagationHops(source_router_id);
+    fatal_if(path_hops < 1,
+             "Router %d cannot find a health sideband path from Router %d",
+             m_id, source_router_id);
     const Cycles propagation(
-        m_network_ptr->getHealthPropagationCycles());
+        path_hops * m_network_ptr->getHealthPropagationCycles());
     const Tick ready = clockEdge(propagation);
     m_pending_health_updates.push_back(
-        {ready, curTick(), source_router_id, score});
+        {ready, curTick(), source_router_id, score, path_hops});
     scheduleEventAbsolute(ready);
+}
+
+int
+Router::healthPropagationHops(int source_router_id) const
+{
+    if (source_router_id == m_id)
+        return 0;
+
+    std::queue<std::pair<const Router *, int>> frontier;
+    std::set<int> visited;
+    frontier.push({this, 0});
+    visited.insert(m_id);
+
+    while (!frontier.empty()) {
+        const Router *router = frontier.front().first;
+        const int hops = frontier.front().second;
+        frontier.pop();
+
+        for (const Router *neighbor : router->getDirectNeighbors()) {
+            if (neighbor->get_id() == source_router_id)
+                return hops + 1;
+            if (visited.insert(neighbor->get_id()).second)
+                frontier.push({neighbor, hops + 1});
+        }
+    }
+    return -1;
 }
 
 void
@@ -942,6 +986,8 @@ Router::applyPendingHealthScores()
         // Discard health learned during artificial cycle formation.  The
         // validation latency starts only after the dependency ring closes.
         m_neighbor_health_table.clear();
+        m_neighbor_health_sent_tick.clear();
+        m_neighbor_health_path_hops.clear();
         m_deadlock_test_health_epoch = formed;
     }
 
@@ -966,6 +1012,10 @@ Router::applyPendingHealthScores()
         if (valid) {
             const int previous = getNeighborHealth(it->source_router_id);
             m_neighbor_health_table[it->source_router_id] = it->score;
+            m_neighbor_health_sent_tick[it->source_router_id] =
+                it->sent_tick;
+            m_neighbor_health_path_hops[it->source_router_id] =
+                it->path_hops;
             if (m_network_ptr->isDeadlockTestEnabled() &&
                 it->score == 0 && previous != 0) {
                 std::ofstream log("m5out/deadlock.log", std::ios::app);
@@ -973,8 +1023,12 @@ Router::applyPendingHealthScores()
                     << " Router " << m_id
                     << " source=" << it->source_router_id
                     << " score=0 sent_tick=" << it->sent_tick
-                    << " propagation_cycles="
+                    << " path_hops=" << it->path_hops
+                    << " cycles_per_hop="
                     << m_network_ptr->getHealthPropagationCycles()
+                    << " propagation_cycles="
+                    << it->path_hops *
+                       m_network_ptr->getHealthPropagationCycles()
                     << std::endl;
             }
         }

@@ -113,7 +113,7 @@ GarnetNetwork::GarnetNetwork(const Params &p)
     fatal_if(m_health_score_bits < 2 || m_health_score_bits > 4,
              "health_score_bits must be 2, 3, or 4");
     fatal_if(m_health_propagation_cycles < 1,
-             "health_propagation_cycles must be at least one cycle");
+             "health_propagation_cycles must be at least one cycle per hop");
     fatal_if(m_escape_buffer_depth == 0,
              "escape_buffer_depth must be positive");
     fatal_if(m_deadlock_test_enabled && m_escape_buffer_depth < 5,
