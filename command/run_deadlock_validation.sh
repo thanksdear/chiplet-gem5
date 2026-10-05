@@ -27,6 +27,7 @@ SYNTHETIC="deadlock_ring"
 VCS_PER_VNET=5
 BLOCKED_VCS_PER_VNET=$((VCS_PER_VNET - 1))
 BUFFERS_PER_DATA_VC=5
+PACKET_FLITS=5
 SIM_CYCLES=3000
 STALL_THRESHOLD=100
 GARNET_DEADLOCK_THRESHOLD=50000
@@ -34,6 +35,7 @@ ESCAPE_BUFFER_DEPTH=5
 
 # Explicitly record the UHAF settings instead of relying on parser defaults.
 HEALTH_BITS=3
+HEALTH_PROPAGATION_CYCLES=1
 UP_HEALTH_MONITOR=1
 HEALTH_ALPHA=0.5
 HEALTH_SEVERE_BIAS=1
@@ -82,6 +84,8 @@ vcs_per_vnet: ${VCS_PER_VNET}
 blocked_vcs_per_vnet: ${BLOCKED_VCS_PER_VNET}
 reserved_escape_vcs_per_vnet: 1
 buffers_per_data_vc: ${BUFFERS_PER_DATA_VC}
+packet_flits: ${PACKET_FLITS}
+escape_buffer_bandwidth_flits_per_cycle: 1
 injection_vnet: 2 (forced by deadlock_ring)
 injection_rate: 1.0 (forced by deadlock_ring)
 packets_per_participating_source: ${BLOCKED_VCS_PER_VNET}
@@ -90,6 +94,7 @@ interposer_stall_threshold: ${STALL_THRESHOLD}
 garnet_deadlock_threshold: ${GARNET_DEADLOCK_THRESHOLD}
 escape_buffer_depth: ${ESCAPE_BUFFER_DEPTH}
 health_score_bits: ${HEALTH_BITS}
+health_propagation_cycles: ${HEALTH_PROPAGATION_CYCLES}
 up_health_monitor: ${UP_HEALTH_MONITOR}
 health_monitor_alpha: ${HEALTH_ALPHA}
 health_severe_bias: ${HEALTH_SEVERE_BIAS}
@@ -117,6 +122,7 @@ echo "Results will be stored in ${RESULT_DIR}"
     --garnet-deadlock-threshold="${GARNET_DEADLOCK_THRESHOLD}" \
     --escape-buffer-depth="${ESCAPE_BUFFER_DEPTH}" \
     --health-score-bits="${HEALTH_BITS}" \
+    --health-propagation-cycles="${HEALTH_PROPAGATION_CYCLES}" \
     --up-health-monitor="${UP_HEALTH_MONITOR}" \
     --health-monitor-alpha="${HEALTH_ALPHA}" \
     --health-severe-bias="${HEALTH_SEVERE_BIAS}" \
@@ -164,18 +170,49 @@ read_stat()
     fi
 }
 
+read_first_log_value()
+{
+    local key=$1
+    local file=$2
+
+    if [[ -f "${file}" ]]; then
+        awk -v key="${key}" '
+            index($0, key "=") {
+                value = substr($0, index($0, key "=") + length(key) + 1)
+                sub(/[^0-9].*$/, "", value)
+                print value
+                found = 1
+                exit
+            }
+            END { if (!found) print 0 }
+        ' "${file}"
+    else
+        echo 0
+    fi
+}
+
 EXPECTED_STAGES=$((6 * BLOCKED_VCS_PER_VNET))
 EXPECTED_PACKETS=${EXPECTED_STAGES}
-EXPECTED_FLITS=$((EXPECTED_PACKETS * 5))
+EXPECTED_FLITS=$((EXPECTED_PACKETS * PACKET_FLITS))
+EXPECTED_MIN_DETECTION_LATENCY=$((STALL_THRESHOLD + HEALTH_PROPAGATION_CYCLES))
 STAGE_COUNT=$(count_record "DEADLOCK STAGE" m5out/deadlock_injection.log)
 BARRIER_COUNT=$(count_record "DEADLOCK BARRIER RELEASED" m5out/deadlock_injection.log)
 CYCLE_COUNT=$(count_record "VC DEPENDENCY CYCLE" m5out/deadlock_injection.log)
 DETECTED_COUNT=$(count_record "DEADLOCK DETECTED" m5out/deadlock.log)
 LATENCY_COUNT=$(count_record "detection_latency_cycles=" m5out/deadlock.log)
+HEALTH_RECEIVED_COUNT=$(count_record "HEALTH SCORE RECEIVED" m5out/deadlock.log)
 ABSORB_START_COUNT=$(count_record "ESCAPE ABSORB START" m5out/deadlock.log)
 ABSORB_COMPLETE_COUNT=$(count_record "ESCAPE ABSORB COMPLETE" m5out/deadlock.log)
 REINJECTED_COUNT=$(count_record "ESCAPE REINJECTED" m5out/deadlock.log)
 DELIVERED_COUNT=$(count_record "RECOVERED PACKET DELIVERED" m5out/deadlock.log)
+FULL_RECOVERY_COUNT=$(count_record \
+    "DEADLOCK FULL RECOVERY COMPLETE" m5out/deadlock.log)
+DETECTION_LATENCY=$(read_first_log_value \
+    "detection_latency_cycles" m5out/deadlock.log)
+ABSORPTION_LATENCY=$(read_first_log_value \
+    "absorption_cycles" m5out/deadlock.log)
+REINJECTION_LATENCY=$(read_first_log_value \
+    "reinjection_cycles" m5out/deadlock.log)
 PACKETS_INJECTED=$(read_stat \
     "system.ruby.network.packets_injected::total" m5out/stats.txt)
 PACKETS_RECEIVED=$(read_stat \
@@ -192,10 +229,15 @@ if (( GEM5_STATUS == 0 &&
       CYCLE_COUNT == 1 &&
       DETECTED_COUNT >= 1 &&
       LATENCY_COUNT >= 1 &&
+      DETECTION_LATENCY >= EXPECTED_MIN_DETECTION_LATENCY &&
+      HEALTH_RECEIVED_COUNT >= 1 &&
       ABSORB_START_COUNT >= 1 &&
       ABSORB_COMPLETE_COUNT >= 1 &&
+      ABSORPTION_LATENCY >= PACKET_FLITS &&
       REINJECTED_COUNT >= 1 &&
+      REINJECTION_LATENCY >= PACKET_FLITS &&
       DELIVERED_COUNT >= 1 &&
+      FULL_RECOVERY_COUNT == 1 &&
       PACKETS_INJECTED == EXPECTED_PACKETS &&
       PACKETS_RECEIVED == EXPECTED_PACKETS &&
       FLITS_INJECTED == EXPECTED_FLITS &&
@@ -214,10 +256,16 @@ barrier_release_count: ${BARRIER_COUNT}
 dependency_cycle_count: ${CYCLE_COUNT}
 deadlock_detected_count: ${DETECTED_COUNT}
 detection_latency_record_count: ${LATENCY_COUNT}
+expected_min_detection_latency_cycles: ${EXPECTED_MIN_DETECTION_LATENCY}
+first_detection_latency_cycles: ${DETECTION_LATENCY}
+zero_health_received_count: ${HEALTH_RECEIVED_COUNT}
 escape_absorb_start_count: ${ABSORB_START_COUNT}
 escape_absorb_complete_count: ${ABSORB_COMPLETE_COUNT}
+first_absorption_latency_cycles: ${ABSORPTION_LATENCY}
 escape_reinjected_count: ${REINJECTED_COUNT}
+first_reinjection_latency_cycles: ${REINJECTION_LATENCY}
 recovered_packet_delivered_count: ${DELIVERED_COUNT}
+full_recovery_complete_count: ${FULL_RECOVERY_COUNT}
 packets_injected: ${PACKETS_INJECTED}
 packets_received: ${PACKETS_RECEIVED}
 flits_injected: ${FLITS_INJECTED}
@@ -229,6 +277,10 @@ if [[ -f m5out/deadlock.log ]]; then
         echo
         echo "Detection latency records:"
         grep "detection_latency_cycles=" m5out/deadlock.log || true
+        echo
+        echo "Recovery latency records:"
+        grep -E "absorption_cycles=|reinjection_cycles=|recovery_latency_cycles=" \
+            m5out/deadlock.log || true
     } >> "${SUMMARY_FILE}"
 fi
 

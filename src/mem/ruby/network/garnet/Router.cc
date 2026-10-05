@@ -203,6 +203,8 @@ Router::wakeup()
     DPRINTF(RubyNetwork, "Router %d woke up\n", m_id);
     assert(clockEdge() == curTick());
 
+    applyPendingHealthScores();
+
     // check for incoming flits
     for (int inport = 0; inport < m_input_unit.size(); inport++) {
         m_input_unit[inport]->wakeup();
@@ -468,6 +470,7 @@ Router::wakeup()
         }
 
         if (recovery_allowed && peer_dead && m_up_input_stall) {
+            m_network_ptr->recordDeadlockTestDetection(curTick());
             // --- Log deadlock detection (preserved) ---
             std::ofstream logf("m5out/deadlock.log", std::ios::app);
             logf << "[DEADLOCK DETECTED] tick=" << curTick()
@@ -922,7 +925,61 @@ Router::functionalWrite(Packet *pkt)
 void
 Router::receiveHealthScore(int source_router_id, int score)
 {
-    m_neighbor_health_table[source_router_id] = score;
+    const Cycles propagation(
+        m_network_ptr->getHealthPropagationCycles());
+    const Tick ready = clockEdge(propagation);
+    m_pending_health_updates.push_back(
+        {ready, curTick(), source_router_id, score});
+    scheduleEventAbsolute(ready);
+}
+
+void
+Router::applyPendingHealthScores()
+{
+    const Tick formed = m_network_ptr->getDeadlockTestFormationTick();
+    if (m_network_ptr->isDeadlockTestEnabled() && formed > 0 &&
+        m_deadlock_test_health_epoch != formed) {
+        // Discard health learned during artificial cycle formation.  The
+        // validation latency starts only after the dependency ring closes.
+        m_neighbor_health_table.clear();
+        m_deadlock_test_health_epoch = formed;
+    }
+
+    for (auto it = m_pending_health_updates.begin();
+         it != m_pending_health_updates.end();) {
+        if (it->ready_tick > curTick()) {
+            ++it;
+            continue;
+        }
+
+        bool valid = true;
+        if (m_network_ptr->isDeadlockTestEnabled() && formed > 0) {
+            const Tick valid_zero_time = formed +
+                m_network_ptr->getInterposerStallThreshold()
+                * clockPeriod();
+            if (it->sent_tick < formed ||
+                (it->score == 0 && it->sent_tick < valid_zero_time)) {
+                valid = false;
+            }
+        }
+
+        if (valid) {
+            const int previous = getNeighborHealth(it->source_router_id);
+            m_neighbor_health_table[it->source_router_id] = it->score;
+            if (m_network_ptr->isDeadlockTestEnabled() &&
+                it->score == 0 && previous != 0) {
+                std::ofstream log("m5out/deadlock.log", std::ios::app);
+                log << "[HEALTH SCORE RECEIVED] tick=" << curTick()
+                    << " Router " << m_id
+                    << " source=" << it->source_router_id
+                    << " score=0 sent_tick=" << it->sent_tick
+                    << " propagation_cycles="
+                    << m_network_ptr->getHealthPropagationCycles()
+                    << std::endl;
+            }
+        }
+        it = m_pending_health_updates.erase(it);
+    }
 }
 
 int

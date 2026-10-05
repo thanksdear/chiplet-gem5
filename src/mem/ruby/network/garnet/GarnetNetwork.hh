@@ -109,6 +109,10 @@ class GarnetNetwork : public Network
     { return m_deadlock_test_enabled; }
     Tick getDeadlockTestFormationTick() const
     { return m_deadlock_test_formation_tick; }
+    Tick getDeadlockTestDetectionTick() const
+    { return m_deadlock_test_detection_tick; }
+    void recordDeadlockTestDetection(Tick tick);
+    void recordDeadlockTestPacketDelivery(Tick tick, Tick clock_period);
     uint32_t getEscapeBufferDepth() const
     { return m_escape_buffer_depth; }
     bool holdDeadlockTestHead(int source_router, int router_id,
@@ -121,6 +125,8 @@ class GarnetNetwork : public Network
     { return m_health_monitor_broadcast_interval; }
     uint32_t getHealthMonitorChangeThreshold() const
     { return m_health_monitor_change_threshold; }
+    uint32_t getHealthPropagationCycles() const
+    { return m_health_propagation_cycles; }
     bool isUpHealthMonitorEnabled() const
     { return m_up_health_monitor_enabled; }
     float getHealthMonitorAlpha() const
@@ -291,6 +297,7 @@ class GarnetNetwork : public Network
     uint32_t m_health_score_bits;
     uint32_t m_health_monitor_broadcast_interval;
     uint32_t m_health_monitor_change_threshold;
+    uint32_t m_health_propagation_cycles;
     bool m_up_health_monitor_enabled;
     float m_health_monitor_alpha;
     uint32_t m_health_severe_bias;
@@ -367,6 +374,8 @@ class GarnetNetwork : public Network
     std::set<std::tuple<int, int>> m_deadlock_test_staged_vcs;
     bool m_deadlock_test_barrier_released = false;
     Tick m_deadlock_test_formation_tick = 0;
+    Tick m_deadlock_test_detection_tick = 0;
+    uint32_t m_deadlock_test_packets_delivered = 0;
 };
 
 inline std::ostream&

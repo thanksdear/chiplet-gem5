@@ -221,6 +221,16 @@ class Router : public BasicRouter, public Consumer
     std::vector<Router*> m_direct_neighbors; // adjacent interposer routers (E/W/N/S)
     // router_id -> quantized health score
     std::map<int, int> m_neighbor_health_table;
+    struct PendingHealthUpdate
+    {
+        Tick ready_tick;
+        Tick sent_tick;
+        int source_router_id;
+        int score;
+    };
+    std::vector<PendingHealthUpdate> m_pending_health_updates;
+    Tick m_deadlock_test_health_epoch = 0;
+    void applyPendingHealthScores();
 
     // ----- Adaptive RC statistics (algorithm 4) -----
     int m_arc_at_target = 0;       // flit arrived at its target gateway

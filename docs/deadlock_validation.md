@@ -39,6 +39,7 @@ build/Garnet_standalone/gem5.opt \
   --buffers-per-data-vc=5 \
   --interposer-stall-threshold=100 \
   --escape-buffer-depth=5 \
+  --health-propagation-cycles=1 \
   --sim-cycles=3000
 ```
 
@@ -60,9 +61,19 @@ be staged without leaving a tail flit in an upstream dependency resource.
 `m5out/deadlock.log` must contain:
 
 - `DEADLOCK DETECTED` and a non-negative `detection_latency_cycles`;
+- `HEALTH SCORE RECEIVED` after the configured registered sideband delay;
 - `ESCAPE ABSORB START` and `ESCAPE ABSORB COMPLETE`;
 - `ESCAPE REINJECTED`;
-- `RECOVERED PACKET DELIVERED`.
+- `RECOVERED PACKET DELIVERED`;
+- `DEADLOCK FULL RECOVERY COMPLETE` and `recovery_latency_cycles`.
+
+The escape buffer is single-ported in the timing model: absorption and local
+reinjection each transfer at most one flit per cycle.  Health scores become
+visible to a peer only after `health_propagation_cycles` registered sideband
+cycles.  Consequently, with a 100-cycle stall threshold and the default
+one-cycle registered propagation, detection cannot occur earlier than 101
+cycles after cycle formation.  A five-flit packet also requires at least five
+cycles for absorption and five cycles for local reinjection.
 
 The final statistics must also report all 24 packets (120 flits) injected and
 received.  This guards against declaring success after only a partial

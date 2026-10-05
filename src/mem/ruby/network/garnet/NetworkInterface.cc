@@ -251,9 +251,17 @@ NetworkInterface::wakeup()
                             << curTick()
                             << " src_router=" << route.src_router
                             << " dest_router=" << route.dest_router
-                            << " hops=" << route.hops_traversed
-                            << std::endl;
+                            << " hops=" << route.hops_traversed;
+                        const Tick detected =
+                            m_net_ptr->getDeadlockTestDetectionTick();
+                        if (detected > 0) {
+                            log << " recovery_latency_cycles="
+                                << (curTick() - detected) / clockPeriod();
+                        }
+                        log << std::endl;
                     }
+                    m_net_ptr->recordDeadlockTestPacketDelivery(
+                        curTick(), clockPeriod());
                     // Space is available. Enqueue to protocol buffer.
                     outNode_ptr[vnet]->enqueue(t_flit->get_msg_ptr(), curTime,
                                                cyclesToTicks(Cycles(1)));

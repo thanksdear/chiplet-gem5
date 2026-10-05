@@ -115,6 +115,7 @@ class EscapeBuffer
     int m_source_vc;     // VC we absorbed from
     Tick m_absorb_time;  // tick when absorption started
     int m_reinject_vc;   // VC we are re-injecting into (-1 if not yet)
+    Tick m_reinject_time; // tick when escape-VC reinjection started
 
     std::deque<flit*> m_buffer;  // absorbed flits
 

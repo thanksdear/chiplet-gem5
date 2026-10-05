@@ -115,6 +115,9 @@ def define_options(parser):
         help="number of bits used to quantize the channel health score "
              "(2, 3, or 4; default: 3)")
     parser.add_argument(
+        "--health-propagation-cycles", action="store", type=int, default=1,
+        help="registered health-score sideband latency in cycles")
+    parser.add_argument(
         "--up-health-monitor", action="store",
         type=int, default=1,
         help="enable Up port health monitor (0=Down-only, 1=Up+Down)")
@@ -202,6 +205,9 @@ def init_network(options, network, InterfaceClass):
         network.deadlock_test_enabled = options.deadlock_test
         network.escape_buffer_depth = options.escape_buffer_depth
         network.health_score_bits = options.health_score_bits
+        if options.health_propagation_cycles < 1:
+            raise ValueError("--health-propagation-cycles must be >= 1")
+        network.health_propagation_cycles = options.health_propagation_cycles
         network.up_health_monitor_enabled = bool(options.up_health_monitor)
         network.health_monitor_alpha = options.health_monitor_alpha
         if not 0 <= options.health_severe_bias <= 7:

@@ -53,6 +53,7 @@ EscapeBuffer::EscapeBuffer(Router *router, int inport, int capacity)
       m_source_vc(-1),
       m_absorb_time(0),
       m_reinject_vc(-1),
+      m_reinject_time(0),
       m_absorb_count(0),
       m_reinject_count(0),
       m_force_reinject_count(0)
@@ -81,43 +82,11 @@ EscapeBuffer::startAbsorb(InputUnit *input_unit, int vc, Tick curTick)
     m_source_vc = vc;
     m_absorb_time = curTick;
     m_occupied = true;
+    m_absorbing = true;
     m_reinject_vc = -1;
-
-    // Extract all flits currently in this VC that belong to the head packet
-    int absorbed = 0;
-    bool got_tail = false;
-
-    while (input_unit->getVcBufferSize(vc) > 0) {
-        flit *f = input_unit->getTopFlit(vc);
-        m_buffer.push_back(f);
-        absorbed++;
-
-        const bool is_tail = f->get_type() == TAIL_ ||
-                             f->get_type() == HEAD_TAIL_;
-        // Locally re-injected flits consumed no physical-link credit.  All
-        // physical credits, including the tail free signal, are returned so
-        // absorption actually breaks the channel dependency.
-        if (!f->is_escape_reinjected())
-            input_unit->increment_credit(vc, is_tail, curTick);
-
-        if (is_tail) {
-            got_tail = true;
-            break;
-        }
-
-        if (absorbed >= m_capacity)
-            break;
-    }
-
-    if (got_tail) {
-        // Full packet absorbed in one shot
-        m_absorbing = false;
-        // Free the source VC
-        input_unit->set_vc_idle(vc, curTick);
-    } else {
-        // Partial absorption — need to continue in next cycles
-        m_absorbing = true;
-    }
+    fatal_if(!m_buffer.empty(),
+             "EscapeBuffer Router %d started with stale flits",
+             m_router->get_id());
 
     m_absorb_count++;
 
@@ -127,19 +96,15 @@ EscapeBuffer::startAbsorb(InputUnit *input_unit, int vc, Tick curTick)
             << " Router " << m_router->get_id()
             << " inport=" << m_inport
             << " vc=" << vc
-            << " flits=" << absorbed
-            << " complete=" << got_tail << std::endl;
-        if (got_tail) {
-            log << "[ESCAPE ABSORB COMPLETE] tick=" << curTick
-                << " Router " << m_router->get_id()
-                << " flits=" << m_buffer.size() << std::endl;
-        }
+            << " flits=0 complete=0 bandwidth_flits_per_cycle=1"
+            << std::endl;
     }
 
     DPRINTF(RubyNetwork,
-            "EscapeBuffer Router %d inport %d: started absorb from vc %d, "
-            "absorbed %d flits, got_tail=%d\n",
-            m_router->get_id(), m_inport, vc, absorbed, got_tail);
+            "EscapeBuffer Router %d inport %d: started absorb from vc %d\n",
+            m_router->get_id(), m_inport, vc);
+
+    m_router->schedule_wakeup(Cycles(1));
 
     return true;
 }
@@ -152,37 +117,47 @@ EscapeBuffer::continueAbsorb(InputUnit *input_unit, Tick curTick)
 
     int vc = m_source_vc;
 
-    // Extract flits that arrived this cycle
-    while (input_unit->getVcBufferSize(vc) > 0 &&
-           (int)m_buffer.size() < m_capacity) {
-        flit *f = input_unit->getTopFlit(vc);
-        m_buffer.push_back(f);
-
-        // Send credit back for this flit
-        bool is_tail = (f->get_type() == TAIL_ ||
-                        f->get_type() == HEAD_TAIL_);
-        if (!f->is_escape_reinjected())
-            input_unit->increment_credit(vc, is_tail, curTick);
-
-        if (is_tail) {
-            m_absorbing = false;
-            // Free the source VC
-            input_unit->set_vc_idle(vc, curTick);
-
-            std::ofstream log("m5out/deadlock.log", std::ios::app);
-            log << "[ESCAPE ABSORB COMPLETE] tick=" << curTick
-                << " Router " << m_router->get_id()
-                << " flits=" << m_buffer.size() << std::endl;
-
-            DPRINTF(RubyNetwork,
-                    "EscapeBuffer Router %d inport %d: absorb complete, "
-                    "total %d flits\n",
-                    m_router->get_id(), m_inport,
-                    (int)m_buffer.size());
-            return true;
-        }
+    // A single-ported escape buffer accepts at most one flit per cycle.
+    if (input_unit->getVcBufferSize(vc) == 0) {
+        m_router->schedule_wakeup(Cycles(1));
+        return false;
     }
 
+    fatal_if((int)m_buffer.size() >= m_capacity,
+             "EscapeBuffer Router %d overflow while absorbing vc %d",
+             m_router->get_id(), vc);
+
+    flit *f = input_unit->getTopFlit(vc);
+    m_buffer.push_back(f);
+    bool is_tail = (f->get_type() == TAIL_ ||
+                    f->get_type() == HEAD_TAIL_);
+    if (!f->is_escape_reinjected())
+        input_unit->increment_credit(vc, is_tail, curTick);
+
+    if (is_tail) {
+        m_absorbing = false;
+        input_unit->set_vc_idle(vc, curTick);
+
+        std::ofstream log("m5out/deadlock.log", std::ios::app);
+        log << "[ESCAPE ABSORB COMPLETE] tick=" << curTick
+            << " Router " << m_router->get_id()
+            << " flits=" << m_buffer.size()
+            << " absorption_cycles="
+            << (curTick - m_absorb_time) / m_router->clockPeriod()
+            << std::endl;
+
+        DPRINTF(RubyNetwork,
+                "EscapeBuffer Router %d inport %d: absorb complete, "
+                "total %d flits\n",
+                m_router->get_id(), m_inport,
+                (int)m_buffer.size());
+        // Ensure reinjection begins next cycle even if no unrelated link
+        // event happens to wake this router.
+        m_router->schedule_wakeup(Cycles(1));
+        return true;
+    }
+
+    m_router->schedule_wakeup(Cycles(1));
     return false;  // still absorbing
 }
 
@@ -258,6 +233,7 @@ EscapeBuffer::doReinject(InputUnit *input_unit, Router *router,
                  m_router->get_id(), expected_id, packet_flits);
 
         m_reinject_vc = target_vc;
+        m_reinject_time = curTick;
         input_unit->set_vc_active(target_vc, curTick);
 
         flit *head = m_buffer.front();
@@ -267,12 +243,21 @@ EscapeBuffer::doReinject(InputUnit *input_unit, Router *router,
                                             input_unit->get_direction(),
                                             head);
         input_unit->grant_outport(target_vc, outport);
+
+        std::ofstream log("m5out/deadlock.log", std::ios::app);
+        log << "[ESCAPE REINJECT START] tick=" << curTick
+            << " Router " << m_router->get_id()
+            << " target_vc=" << target_vc
+            << " bandwidth_flits_per_cycle=1" << std::endl;
+
+        router->schedule_wakeup(Cycles(1));
+        return;
     }
 
     const int vc_capacity =
         router->get_net_ptr()->getBuffersPerDataVC();
     int free_slots = vc_capacity - input_unit->getVcBufferSize(target_vc);
-    while (!m_buffer.empty() && free_slots > 0) {
+    if (!m_buffer.empty() && free_slots > 0) {
         flit *f = m_buffer.front();
         m_buffer.pop_front();
 
@@ -294,7 +279,6 @@ EscapeBuffer::doReinject(InputUnit *input_unit, Router *router,
         }
 
         input_unit->insertFlit(target_vc, f);
-        free_slots--;
     }
 
     if (m_buffer.empty()) {
@@ -303,7 +287,10 @@ EscapeBuffer::doReinject(InputUnit *input_unit, Router *router,
         log << "[ESCAPE REINJECTED] tick=" << curTick
             << " Router " << m_router->get_id()
             << " target_vc=" << target_vc
-            << " outport=" << outport << std::endl;
+            << " outport=" << outport
+            << " reinjection_cycles="
+            << (curTick - m_reinject_time) / m_router->clockPeriod()
+            << std::endl;
 
         DPRINTF(RubyNetwork,
                 "EscapeBuffer Router %d inport %d: reinjected into vc %d, "

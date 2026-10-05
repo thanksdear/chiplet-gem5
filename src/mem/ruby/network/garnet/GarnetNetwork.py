@@ -76,6 +76,8 @@ class GarnetNetwork(RubyNetwork):
                               "periodic broadcast interval in cycles")
     health_monitor_change_threshold = Param.UInt32(1,
                               "quantized score change threshold for immediate broadcast")
+    health_propagation_cycles = Param.UInt32(1,
+                              "registered health sideband propagation latency")
     up_health_monitor_enabled = Param.Bool(True,
                               "enable Up port health monitor (disable for Down-only health)")
     health_monitor_alpha = Param.Float(0.5,

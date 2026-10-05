@@ -105,12 +105,15 @@ GarnetNetwork::GarnetNetwork(const Params &p)
     m_health_score_bits = p.health_score_bits;
     m_health_monitor_broadcast_interval = p.health_monitor_broadcast_interval;
     m_health_monitor_change_threshold = p.health_monitor_change_threshold;
+    m_health_propagation_cycles = p.health_propagation_cycles;
     m_up_health_monitor_enabled = p.up_health_monitor_enabled;
     m_health_monitor_alpha = p.health_monitor_alpha;
     m_health_severe_bias = p.health_severe_bias;
     m_health_moderate_bias = p.health_moderate_bias;
     fatal_if(m_health_score_bits < 2 || m_health_score_bits > 4,
              "health_score_bits must be 2, 3, or 4");
+    fatal_if(m_health_propagation_cycles < 1,
+             "health_propagation_cycles must be at least one cycle");
     fatal_if(m_escape_buffer_depth == 0,
              "escape_buffer_depth must be positive");
     fatal_if(m_deadlock_test_enabled && m_escape_buffer_depth < 5,
@@ -277,6 +280,34 @@ GarnetNetwork::holdDeadlockTestHead(int source_router, int router_id,
     // Hold the last arriving head for this cycle as well.  Starting with the
     // next allocator cycle, no artificial blocking remains.
     return true;
+}
+
+void
+GarnetNetwork::recordDeadlockTestDetection(Tick tick)
+{
+    if (m_deadlock_test_enabled && m_deadlock_test_detection_tick == 0)
+        m_deadlock_test_detection_tick = tick;
+}
+
+void
+GarnetNetwork::recordDeadlockTestPacketDelivery(Tick tick,
+                                                Tick clock_period)
+{
+    if (!m_deadlock_test_enabled)
+        return;
+
+    m_deadlock_test_packets_delivered++;
+    const uint32_t expected = 6 * m_deadlock_test_vcs;
+    if (m_deadlock_test_packets_delivered == expected) {
+        std::ofstream log("m5out/deadlock.log", std::ios::app);
+        log << "[DEADLOCK FULL RECOVERY COMPLETE] tick=" << tick
+            << " packets=" << m_deadlock_test_packets_delivered;
+        if (m_deadlock_test_detection_tick > 0) {
+            log << " recovery_latency_cycles="
+                << (tick - m_deadlock_test_detection_tick) / clock_period;
+        }
+        log << std::endl;
+    }
 }
 
 /*
