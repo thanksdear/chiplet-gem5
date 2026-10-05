@@ -101,6 +101,12 @@ def define_options(parser):
         type=int, default=10000,
         help="interposer VC stall threshold for early deadlock exit.")
     parser.add_argument(
+        "--deadlock-test", action="store_true", default=False,
+        help="enable the deterministic UHAF VC-cycle validation hooks")
+    parser.add_argument(
+        "--escape-buffer-depth", action="store", type=int, default=5,
+        help="flit capacity of each UHAF escape buffer (default: 5)")
+    parser.add_argument(
         "--health-score-bits", action="store", type=int,
         choices=(2, 3, 4), default=3,
         help="number of bits used to quantize the channel health score "
@@ -189,6 +195,8 @@ def init_network(options, network, InterfaceClass):
         network.lbdr_gateway_map = lbdr_map
         network.garnet_deadlock_threshold = options.garnet_deadlock_threshold
         network.interposer_stall_threshold = options.interposer_stall_threshold
+        network.deadlock_test_enabled = options.deadlock_test
+        network.escape_buffer_depth = options.escape_buffer_depth
         network.health_score_bits = options.health_score_bits
         network.up_health_monitor_enabled = bool(options.up_health_monitor)
         network.health_monitor_alpha = options.health_monitor_alpha

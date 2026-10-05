@@ -32,6 +32,7 @@
 #include "mem/ruby/network/garnet/GarnetNetwork.hh"
 
 #include <cassert>
+#include <fstream>
 
 #include "base/cast.hh"
 #include "base/compiler.hh"
@@ -92,6 +93,9 @@ GarnetNetwork::GarnetNetwork(const Params &p)
         }
     }
     m_interposer_stall_threshold = p.interposer_stall_threshold;
+    m_deadlock_test_enabled = p.deadlock_test_enabled;
+    m_escape_buffer_depth = p.escape_buffer_depth;
+    m_deadlock_test_vcs = p.vcs_per_vnet;
     m_health_score_bits = p.health_score_bits;
     m_health_monitor_broadcast_interval = p.health_monitor_broadcast_interval;
     m_health_monitor_change_threshold = p.health_monitor_change_threshold;
@@ -101,6 +105,13 @@ GarnetNetwork::GarnetNetwork(const Params &p)
     m_health_moderate_bias = p.health_moderate_bias;
     fatal_if(m_health_score_bits < 2 || m_health_score_bits > 4,
              "health_score_bits must be 2, 3, or 4");
+    fatal_if(m_escape_buffer_depth == 0,
+             "escape_buffer_depth must be positive");
+    fatal_if(m_deadlock_test_enabled && m_escape_buffer_depth < 5,
+             "deadlock_test uses 5-flit vnet-2 packets and requires "
+             "escape_buffer_depth >= 5");
+    fatal_if(m_deadlock_test_enabled && m_routing_algorithm != 4,
+             "deadlock_test requires UHAF routing algorithm 4");
 
     m_enable_fault_model = p.enable_fault_model;
     if (m_enable_fault_model)
@@ -192,6 +203,68 @@ GarnetNetwork::init()
             router->printFaultVector(std::cout);
         }
     }
+}
+
+bool
+GarnetNetwork::holdDeadlockTestHead(int source_router, int router_id,
+                                    int input_vc,
+                                    PortDirection input_direction)
+{
+    if (!m_deadlock_test_enabled || m_deadlock_test_barrier_released)
+        return false;
+
+    const int first_ir = static_cast<int>(getFirstInterposerRouterId());
+    bool wait_point = false;
+    switch (source_router) {
+      case 0:
+        wait_point = router_id == first_ir && input_direction == "Up";
+        break;
+      case 1:
+        wait_point = router_id == first_ir + 1 &&
+                     input_direction == "West";
+        break;
+      case 2:
+        wait_point = router_id == 1 && input_direction == "East";
+        break;
+      case 3:
+        wait_point = router_id == 0 && input_direction == "East";
+        break;
+      default:
+        return false;
+    }
+
+    if (!wait_point)
+        return false;
+
+    const auto [it, inserted] =
+        m_deadlock_test_staged_vcs.emplace(source_router, input_vc);
+    if (inserted) {
+        std::ofstream log("m5out/deadlock_injection.log", std::ios::app);
+        log << "[DEADLOCK STAGE] tick=" << curTick()
+            << " source=R" << source_router
+            << " wait_router=R" << router_id
+            << " input=" << input_direction
+            << " vc=" << input_vc
+            << " staged=" << m_deadlock_test_staged_vcs.size()
+            << "/" << 4 * m_deadlock_test_vcs << std::endl;
+    }
+
+    if (m_deadlock_test_staged_vcs.size() == 4 * m_deadlock_test_vcs) {
+        m_deadlock_test_barrier_released = true;
+        m_deadlock_test_formation_tick = curTick();
+
+        std::ofstream log("m5out/deadlock_injection.log", std::ios::app);
+        log << "[DEADLOCK BARRIER RELEASED] tick=" << curTick()
+            << " staged_vcs=" << m_deadlock_test_staged_vcs.size()
+            << std::endl;
+        log << "[VC DEPENDENCY CYCLE] "
+            << "R0.Down -> IR0.East -> IR1.Up -> "
+            << "R1.West -> R0.Down" << std::endl;
+    }
+
+    // Hold the last arriving head for this cycle as well.  Starting with the
+    // next allocator cycle, no artificial blocking remains.
+    return true;
 }
 
 /*

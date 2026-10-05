@@ -34,6 +34,7 @@
 
 #include <cassert>
 #include <cmath>
+#include <fstream>
 
 #include "base/cast.hh"
 #include "debug/RubyNetwork.hh"
@@ -242,6 +243,17 @@ NetworkInterface::wakeup()
                 t_flit->get_type() == HEAD_TAIL_) {
                 if (!iPort->messageEnqueuedThisCycle &&
                     outNode_ptr[vnet]->areNSlotsAvailable(1, curTime)) {
+                    if (t_flit->is_recovery()) {
+                        std::ofstream log("m5out/deadlock.log",
+                                          std::ios::app);
+                        const RouteInfo route = t_flit->get_route();
+                        log << "[RECOVERED PACKET DELIVERED] tick="
+                            << curTick()
+                            << " src_router=" << route.src_router
+                            << " dest_router=" << route.dest_router
+                            << " hops=" << route.hops_traversed
+                            << std::endl;
+                    }
                     // Space is available. Enqueue to protocol buffer.
                     outNode_ptr[vnet]->enqueue(t_flit->get_msg_ptr(), curTime,
                                                cyclesToTicks(Cycles(1)));

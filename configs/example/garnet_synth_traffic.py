@@ -49,7 +49,8 @@ parser.add_argument("--synthetic", default="uniform_random",
                     choices=['uniform_random', 'tornado', 'bit_complement', \
                              'bit_reverse', 'bit_rotation', 'neighbor', \
                              'shuffle', 'transpose', 'hotspot', \
-                             'hotspot_single', 'hotspot_multi'])
+                             'hotspot_single', 'hotspot_multi', \
+                             'deadlock_ring'])
 
 parser.add_argument("-i", "--injectionrate", type=float, default=0.1,
                     metavar="I",
@@ -88,6 +89,21 @@ parser.add_argument("--inj-vnet", type=int, default=-1,
 Ruby.define_options(parser)
 
 args = parser.parse_args()
+
+# Deterministic, opt-in validation workload.  Four staged flows form a
+# cross-layer VC dependency cycle; ordinary traffic modes never enable the
+# corresponding routing and allocator hooks.
+if args.synthetic == "deadlock_ring":
+    if args.topology != "Chiplet2_5D":
+        parser.error("deadlock_ring requires --topology=Chiplet2_5D")
+    if args.routing_algorithm != 4:
+        parser.error("deadlock_ring requires --routing-algorithm=4 (UHAF)")
+    if args.num_chiplets < 1 or args.num_cpus < 16:
+        parser.error("deadlock_ring requires at least one 4x4 chiplet")
+    args.inj_vnet = 2
+    args.injectionrate = 1.0
+    args.num_packets_max = args.vcs_per_vnet
+    args.deadlock_test = True
 
 # The chiplet topology numbers routers chiplet-by-chiplet, but synthetic
 # matrix permutations still need the dimensions of the complete endpoint

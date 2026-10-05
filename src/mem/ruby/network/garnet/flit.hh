@@ -89,6 +89,12 @@ class flit
     bool is_inter_chiplet() { return m_is_inter_chiplet; }
     void set_inter_chiplet(bool v) { m_is_inter_chiplet = v; }
 
+    bool is_escape_reinjected() const { return m_escape_reinjected; }
+    void set_escape_reinjected(bool value)
+    { m_escape_reinjected = value; }
+    bool is_recovery() const { return m_recovery; }
+    void set_recovery(bool value) { m_recovery = value; }
+
     void increment_hops() { m_route.hops_traversed++; }
     virtual void print(std::ostream& out) const;
 
@@ -140,6 +146,10 @@ class flit
     int m_routing_target = -1;  // -1 = no target; >=0 = optimized target router ID
     int m_redirect_count = 0;   // number of times this flit has been redirected
     bool m_is_inter_chiplet = false;
+    // One-hop marker: absorption already returned the input-link credit.
+    bool m_escape_reinjected = false;
+    // Persistent marker used to validate delivery of recovered packets.
+    bool m_recovery = false;
 };
 
 inline std::ostream&
