@@ -6,9 +6,11 @@ barrier.
 
 ## Scenario
 
-Four groups of five-flit vnet-2 packets are injected in reverse dependency
-order.  Each group contains `vcs_per_vnet` packets, so all data VCs of the
-four resources are occupied.  The resulting dependency cycle is:
+Four groups of five-flit vnet-2 packets are injected in path-dependency order
+(`R1`, `R3`, `R2`, then `R0`).  This lets each group traverse resources that
+a later group will occupy.  Each group contains `vcs_per_vnet` packets, so all
+data VCs of the four resources are occupied.  The resulting dependency cycle
+is:
 
 ```text
 R0.Down -> IR0.East -> IR1.Up -> R1.West -> R0.Down

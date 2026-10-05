@@ -200,14 +200,21 @@ GarnetSyntheticTraffic::tick()
             senderEnable = false;
 
         if (traffic == DEADLOCK_RING_) {
-            // Stage the four packet groups in reverse dependency order.
-            // R3 holds West first, followed by R2/Up, R1/East and R0/Down.
-            // This makes the final R0 group close the cycle without relying
-            // on random timing.
+            // Stage groups in path-dependency order. R1 must pass through
+            // R0.East and IR64.Up before those resources are occupied by
+            // R3 and R0; R3 must likewise pass through R1.East before R2
+            // occupies it. The resulting order is R1, R3, R2, R0.
             if (id < 0 || id > 3) {
                 senderEnable = false;
             } else {
-                const Cycles start_cycle((3 - id) * 50 + 1);
+                int stage = 0;
+                switch (id) {
+                  case 1: stage = 0; break;
+                  case 3: stage = 1; break;
+                  case 2: stage = 2; break;
+                  case 0: stage = 3; break;
+                }
+                const Cycles start_cycle(stage * 100 + 1);
                 if (curCycle() < start_cycle)
                     senderEnable = false;
             }
