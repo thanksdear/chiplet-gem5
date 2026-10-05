@@ -103,9 +103,12 @@ if args.synthetic == "deadlock_ring":
     if args.buffers_per_data_vc < 5:
         parser.error("deadlock_ring requires --buffers-per-data-vc >= 5 "
                      "to stage each complete five-flit packet")
+    if args.vcs_per_vnet < 2:
+        parser.error("deadlock_ring requires at least one normal VC and "
+                     "one reserved escape VC")
     args.inj_vnet = 2
     args.injectionrate = 1.0
-    args.num_packets_max = args.vcs_per_vnet
+    args.num_packets_max = args.vcs_per_vnet - 1
     args.deadlock_test = True
 
 # The chiplet topology numbers routers chiplet-by-chiplet, but synthetic

@@ -94,12 +94,11 @@ EscapeBuffer::startAbsorb(InputUnit *input_unit, int vc, Tick curTick)
 
         const bool is_tail = f->get_type() == TAIL_ ||
                              f->get_type() == HEAD_TAIL_;
-        // Return slots as the packet is removed, but retain ownership of the
-        // physical VC by withholding the tail credit/free signal.  That last
-        // credit is returned only when the re-injected tail really leaves.
-        // A locally re-injected flit consumed no new physical-link credit.
-        if (!f->is_escape_reinjected() && !is_tail)
-            input_unit->increment_credit(vc, false, curTick);
+        // Locally re-injected flits consumed no physical-link credit.  All
+        // physical credits, including the tail free signal, are returned so
+        // absorption actually breaks the channel dependency.
+        if (!f->is_escape_reinjected())
+            input_unit->increment_credit(vc, is_tail, curTick);
 
         if (is_tail) {
             got_tail = true;
@@ -162,8 +161,8 @@ EscapeBuffer::continueAbsorb(InputUnit *input_unit, Tick curTick)
         // Send credit back for this flit
         bool is_tail = (f->get_type() == TAIL_ ||
                         f->get_type() == HEAD_TAIL_);
-        if (!f->is_escape_reinjected() && !is_tail)
-            input_unit->increment_credit(vc, false, curTick);
+        if (!f->is_escape_reinjected())
+            input_unit->increment_credit(vc, is_tail, curTick);
 
         if (is_tail) {
             m_absorbing = false;
@@ -203,11 +202,11 @@ EscapeBuffer::tryReinject(InputUnit *input_unit, Router *router, Tick curTick)
         return true;
     }
 
-    // Reuse the original VC.  Its upstream output VC deliberately remains
-    // ACTIVE until the re-injected tail returns the deferred free signal, so
-    // selecting a different locally-IDLE VC could collide with a new head
-    // already in flight from upstream.
-    int target_vc = m_source_vc;
+    // The final data VC is reserved end-to-end for escape traffic.  Ordinary
+    // packets never allocate it, so local reinjection cannot collide with a
+    // physical-link head arriving from upstream.
+    int target_vc = m_source_vc - (m_source_vc %
+        m_router->get_vc_per_vnet()) + m_router->get_vc_per_vnet() - 1;
     if (target_vc < 0 || input_unit->get_vc_state(target_vc) != IDLE_)
         return false;
 
@@ -262,6 +261,7 @@ EscapeBuffer::doReinject(InputUnit *input_unit, Router *router,
         input_unit->set_vc_active(target_vc, curTick);
 
         flit *head = m_buffer.front();
+        head->set_recovery(true);
         int outport = router->route_compute(head->get_route(),
                                             m_inport,
                                             input_unit->get_direction(),
@@ -278,9 +278,9 @@ EscapeBuffer::doReinject(InputUnit *input_unit, Router *router,
 
         // Update flit's VC to the new target
         f->set_vc(target_vc);
-        // Credits for this physical input were already returned while the
-        // packet was absorbed.  Suppress exactly one second credit when this
-        // flit leaves the reinjection router.
+        // Credits for the original physical input were already returned
+        // while the packet was absorbed.  Suppress the local reinjection
+        // credit when this flit leaves the recovery router.
         f->set_escape_reinjected(true);
         f->set_recovery(true);
 

@@ -24,7 +24,8 @@ NUM_DIRS=64
 
 ROUTING_ALGORITHM=4
 SYNTHETIC="deadlock_ring"
-VCS_PER_VNET=4
+VCS_PER_VNET=5
+BLOCKED_VCS_PER_VNET=$((VCS_PER_VNET - 1))
 BUFFERS_PER_DATA_VC=5
 SIM_CYCLES=3000
 STALL_THRESHOLD=100
@@ -78,10 +79,12 @@ num_dirs: ${NUM_DIRS}
 routing_algorithm: ${ROUTING_ALGORITHM} (UHAF)
 synthetic: ${SYNTHETIC}
 vcs_per_vnet: ${VCS_PER_VNET}
+blocked_vcs_per_vnet: ${BLOCKED_VCS_PER_VNET}
+reserved_escape_vcs_per_vnet: 1
 buffers_per_data_vc: ${BUFFERS_PER_DATA_VC}
 injection_vnet: 2 (forced by deadlock_ring)
 injection_rate: 1.0 (forced by deadlock_ring)
-packets_per_participating_source: ${VCS_PER_VNET}
+packets_per_participating_source: ${BLOCKED_VCS_PER_VNET}
 sim_cycles: ${SIM_CYCLES}
 interposer_stall_threshold: ${STALL_THRESHOLD}
 garnet_deadlock_threshold: ${GARNET_DEADLOCK_THRESHOLD}
@@ -161,7 +164,7 @@ read_stat()
     fi
 }
 
-EXPECTED_STAGES=$((6 * VCS_PER_VNET))
+EXPECTED_STAGES=$((6 * BLOCKED_VCS_PER_VNET))
 EXPECTED_PACKETS=${EXPECTED_STAGES}
 EXPECTED_FLITS=$((EXPECTED_PACKETS * 5))
 STAGE_COUNT=$(count_record "DEADLOCK STAGE" m5out/deadlock_injection.log)
