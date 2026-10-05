@@ -101,10 +101,6 @@ class EscapeBuffer
     uint64_t getForceReinjectCount() const { return m_force_reinject_count; }
 
   private:
-    // Send credits back to upstream for each absorbed flit
-    void sendCreditsUpstream(InputUnit *input_unit, int vc,
-                             int num_flits, bool last_is_tail, Tick curTick);
-
     // Find a free VC in the same vnet on the given input port
     int findFreeVc(InputUnit *input_unit, int vnet);
 

@@ -94,7 +94,15 @@ EscapeBuffer::startAbsorb(InputUnit *input_unit, int vc, Tick curTick)
         m_buffer.push_back(f);
         absorbed++;
 
-        if (f->get_type() == TAIL_ || f->get_type() == HEAD_TAIL_) {
+        const bool is_tail = f->get_type() == TAIL_ ||
+                             f->get_type() == HEAD_TAIL_;
+        // Locally re-injected flits did not consume a physical-link credit.
+        // If one is absorbed again, returning another credit would overflow
+        // the upstream OutVcState credit count.
+        if (!f->is_escape_reinjected())
+            input_unit->increment_credit(vc, is_tail, curTick);
+
+        if (is_tail) {
             got_tail = true;
             break;
         }
@@ -102,9 +110,6 @@ EscapeBuffer::startAbsorb(InputUnit *input_unit, int vc, Tick curTick)
         if (absorbed >= m_capacity)
             break;
     }
-
-    // Send credits back upstream for each absorbed flit
-    sendCreditsUpstream(input_unit, vc, absorbed, got_tail, curTick);
 
     if (got_tail) {
         // Full packet absorbed in one shot
@@ -158,7 +163,8 @@ EscapeBuffer::continueAbsorb(InputUnit *input_unit, Tick curTick)
         // Send credit back for this flit
         bool is_tail = (f->get_type() == TAIL_ ||
                         f->get_type() == HEAD_TAIL_);
-        sendCreditsUpstream(input_unit, vc, 1, is_tail, curTick);
+        if (!f->is_escape_reinjected())
+            input_unit->increment_credit(vc, is_tail, curTick);
 
         if (is_tail) {
             m_absorbing = false;
@@ -224,17 +230,6 @@ EscapeBuffer::forceReinject(InputUnit *input_unit, Router *router,
 // ================================================================
 // Helpers
 // ================================================================
-
-void
-EscapeBuffer::sendCreditsUpstream(InputUnit *input_unit, int vc,
-                                  int num_flits, bool last_is_tail,
-                                  Tick curTick)
-{
-    for (int i = 0; i < num_flits; i++) {
-        bool free_signal = (i == num_flits - 1) && last_is_tail;
-        input_unit->increment_credit(vc, free_signal, curTick);
-    }
-}
 
 int
 EscapeBuffer::findFreeVc(InputUnit *input_unit, int vnet)
