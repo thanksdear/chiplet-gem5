@@ -452,7 +452,22 @@ Router::wakeup()
             peer_dead = true;
         }
 
-        if (peer_dead && m_up_input_stall) {
+        // The deterministic test deliberately holds heads while assembling
+        // the cycle.  Those formation stalls are not a deadlock and must not
+        // trigger recovery.  Arm recovery only after the complete cycle has
+        // remained in place for one full detection threshold.
+        bool recovery_allowed = true;
+        if (m_network_ptr->isDeadlockTestEnabled()) {
+            const Tick formed =
+                m_network_ptr->getDeadlockTestFormationTick();
+            const Tick validation_delay =
+                m_network_ptr->getInterposerStallThreshold()
+                * clockPeriod();
+            recovery_allowed = formed > 0 &&
+                curTick() >= formed + validation_delay;
+        }
+
+        if (recovery_allowed && peer_dead && m_up_input_stall) {
             // --- Log deadlock detection (preserved) ---
             std::ofstream logf("m5out/deadlock.log", std::ios::app);
             logf << "[DEADLOCK DETECTED] tick=" << curTick()
