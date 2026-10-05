@@ -60,7 +60,7 @@ class flit
     int get_size() { return m_size; }
     Tick get_enqueue_time() { return m_enqueue_time; }
     Tick get_dequeue_time() { return m_dequeue_time; }
-    int get_id() { return m_id; }
+    int get_id() const { return m_id; }
     Tick get_time() { return m_time; }
     int get_vnet() { return m_vnet; }
     int get_vc() { return m_vc; }
