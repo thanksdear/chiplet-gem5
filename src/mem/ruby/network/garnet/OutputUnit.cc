@@ -106,10 +106,18 @@ OutputUnit::has_credit(int out_vc)
 
 // Check if the output port (i.e., input port at next router) has free VCs.
 bool
-OutputUnit::has_free_vc(int vnet)
+OutputUnit::has_free_vc(int vnet, bool recovery)
 {
     int vc_base = vnet*m_vc_per_vnet;
-    for (int vc = vc_base; vc < vc_base + m_vc_per_vnet; vc++) {
+    int vc_begin = vc_base;
+    int vc_end = vc_base + m_vc_per_vnet;
+    if (m_router->get_net_ptr()->isDeadlockTestEnabled() && vnet == 2) {
+        if (recovery)
+            vc_begin = vc_end - 1;
+        else
+            vc_end--;
+    }
+    for (int vc = vc_begin; vc < vc_end; vc++) {
         if (is_vc_idle(vc, curTick()))
             return true;
     }
@@ -119,10 +127,18 @@ OutputUnit::has_free_vc(int vnet)
 
 // Assign a free output VC to the winner of Switch Allocation
 int
-OutputUnit::select_free_vc(int vnet)
+OutputUnit::select_free_vc(int vnet, bool recovery)
 {
     int vc_base = vnet*m_vc_per_vnet;
-    for (int vc = vc_base; vc < vc_base + m_vc_per_vnet; vc++) {
+    int vc_begin = vc_base;
+    int vc_end = vc_base + m_vc_per_vnet;
+    if (m_router->get_net_ptr()->isDeadlockTestEnabled() && vnet == 2) {
+        if (recovery)
+            vc_begin = vc_end - 1;
+        else
+            vc_end--;
+    }
+    for (int vc = vc_begin; vc < vc_end; vc++) {
         if (is_vc_idle(vc, curTick())) {
             outVcState[vc].setState(ACTIVE_, curTick());
             return vc;

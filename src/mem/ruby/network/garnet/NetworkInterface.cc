@@ -506,10 +506,14 @@ NetworkInterface::flitisizeMessage(MsgPtr msg_ptr, int vnet)
 int
 NetworkInterface::calculateVC(int vnet)
 {
-    for (int i = 0; i < m_vc_per_vnet; i++) {
+    int alloc_vcs = m_vc_per_vnet;
+    if (m_net_ptr->isDeadlockTestEnabled() && vnet == 2)
+        alloc_vcs--;
+
+    for (int i = 0; i < alloc_vcs; i++) {
         int delta = m_vc_allocator[vnet];
         m_vc_allocator[vnet]++;
-        if (m_vc_allocator[vnet] == m_vc_per_vnet)
+        if (m_vc_allocator[vnet] == alloc_vcs)
             m_vc_allocator[vnet] = 0;
 
         if (outVcState[(vnet*m_vc_per_vnet) + delta].isInState(

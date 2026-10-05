@@ -96,6 +96,12 @@ GarnetNetwork::GarnetNetwork(const Params &p)
     m_deadlock_test_enabled = p.deadlock_test_enabled;
     m_escape_buffer_depth = p.escape_buffer_depth;
     m_deadlock_test_vcs = p.vcs_per_vnet;
+    if (m_deadlock_test_enabled) {
+        fatal_if(m_deadlock_test_vcs <= 1,
+                 "deadlock_test requires at least one normal VC and one "
+                 "reserved escape VC per vnet");
+        m_deadlock_test_vcs--;
+    }
     m_health_score_bits = p.health_score_bits;
     m_health_monitor_broadcast_interval = p.health_monitor_broadcast_interval;
     m_health_monitor_change_threshold = p.health_monitor_change_threshold;

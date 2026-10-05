@@ -264,11 +264,8 @@ SwitchAllocator::arbitrate_outports()
 
             assert(!(input_unit->isReady(invc, curTick())));
             input_unit->set_vc_idle(invc, curTick());
-            // For a re-injected packet, absorption returned every slot
-            // except the tail slot and kept the physical VC ACTIVE upstream.
-            // This returns that deferred credit and free signal.  For a
-            // normal packet, this is the ordinary tail credit.
-            input_unit->increment_credit(invc, true, curTick());
+            if (!escape_reinjected)
+                input_unit->increment_credit(invc, true, curTick());
         } else if (!escape_reinjected) {
             input_unit->increment_credit(invc, false, curTick());
         }
@@ -331,7 +328,7 @@ SwitchAllocator::send_allowed(int inport, int invc, int outport, int outvc)
         // needs outvc
         // this is only true for HEAD and HEAD_TAIL flits.
 
-        if (output_unit->has_free_vc(vnet)) {
+        if (output_unit->has_free_vc(vnet, candidate->is_recovery())) {
 
             has_outvc = true;
 
@@ -404,8 +401,9 @@ int
 SwitchAllocator::vc_allocate(int outport, int inport, int invc)
 {
     // Select a free VC from the output port
-    int outvc =
-        m_router->getOutputUnit(outport)->select_free_vc(get_vnet(invc));
+    flit *candidate = m_router->getInputUnit(inport)->peekTopFlit(invc);
+    int outvc = m_router->getOutputUnit(outport)->select_free_vc(
+        get_vnet(invc), candidate->is_recovery());
 
     // has to get a valid VC since it checked before performing SA
     assert(outvc != -1);

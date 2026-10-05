@@ -8,15 +8,16 @@ barrier.
 
 Six groups of five-flit vnet-2 packets are injected in path-dependency order
 (`R1`, `R0`, `R2`, `R3`, `R4`, then `R5`).  Each group contains
-`vcs_per_vnet` packets and occupies one directed channel while requesting the
-next occupied channel.  The resulting closed dependency cycle is:
+four packets and occupies the four normal VCs of one directed channel while
+requesting the next occupied channel.  A fifth VC is reserved end-to-end for
+escape traffic.  The resulting closed dependency cycle is:
 
 ```text
 R0.Down -> IR0.East -> IR1.Up -> R3.West -> R2.West -> R1.West -> R0.Down
 ```
 
 The formation barrier only synchronizes the packet heads.  It is permanently
-removed when all `6 * vcs_per_vnet` heads have reached their wait points.
+removed when all 24 normal-VC heads have reached their wait points.
 Subsequent blocking is produced by ordinary Garnet VC allocation and credit
 flow control.
 
@@ -34,7 +35,7 @@ build/Garnet_standalone/gem5.opt \
   --chiplet-mesh-cols=2 \
   --routing-algorithm=4 \
   --synthetic=deadlock_ring \
-  --vcs-per-vnet=4 \
+  --vcs-per-vnet=5 \
   --buffers-per-data-vc=5 \
   --interposer-stall-threshold=100 \
   --escape-buffer-depth=5 \
@@ -42,8 +43,9 @@ build/Garnet_standalone/gem5.opt \
 ```
 
 The test automatically selects vnet 2, injection rate 1.0, six participating
-sources, and `vcs_per_vnet` packets per source.  Only sources R0 through R5
-participate in this workload.
+sources, and `vcs_per_vnet - 1` packets per source.  Only sources R0 through
+R5 participate in this workload.  In test mode the final vnet-2 VC is
+reserved for recovered packets; ordinary packets cannot allocate it.
 Each data VC must have at least five slots so a complete five-flit packet can
 be staged without leaving a tail flit in an upstream dependency resource.
 
