@@ -6,18 +6,17 @@ barrier.
 
 ## Scenario
 
-Four groups of five-flit vnet-2 packets are injected in path-dependency order
-(`R1`, `R3`, `R2`, then `R0`).  This lets each group traverse resources that
-a later group will occupy.  Each group contains `vcs_per_vnet` packets, so all
-data VCs of the four resources are occupied.  The resulting dependency cycle
-is:
+Six groups of five-flit vnet-2 packets are injected in path-dependency order
+(`R1`, `R0`, `R2`, `R3`, `R4`, then `R5`).  Each group contains
+`vcs_per_vnet` packets and occupies one directed channel while requesting the
+next occupied channel.  The resulting closed dependency cycle is:
 
 ```text
-R0.Down -> IR0.East -> IR1.Up -> R1.West -> R0.Down
+R0.Down -> IR0.East -> IR1.Up -> R3.West -> R2.West -> R1.West -> R0.Down
 ```
 
 The formation barrier only synchronizes the packet heads.  It is permanently
-removed when all `4 * vcs_per_vnet` heads have reached their wait points.
+removed when all `6 * vcs_per_vnet` heads have reached their wait points.
 Subsequent blocking is produced by ordinary Garnet VC allocation and credit
 flow control.
 
@@ -42,8 +41,9 @@ build/Garnet_standalone/gem5.opt \
   --sim-cycles=3000
 ```
 
-The test automatically selects vnet 2, injection rate 1.0, four participating
-sources, and `vcs_per_vnet` packets per source.
+The test automatically selects vnet 2, injection rate 1.0, six participating
+sources, and `vcs_per_vnet` packets per source.  Only sources R0 through R5
+participate in this workload.
 Each data VC must have at least five slots so a complete five-flit packet can
 be staged without leaving a tail flit in an upstream dependency resource.
 
@@ -51,7 +51,7 @@ be staged without leaving a tail flit in an upstream dependency resource.
 
 `m5out/deadlock_injection.log` must contain:
 
-- 16 `DEADLOCK STAGE` records for four VCs;
+- 24 `DEADLOCK STAGE` records (six channels with four VCs each);
 - one `DEADLOCK BARRIER RELEASED` record;
 - the explicit `VC DEPENDENCY CYCLE` record.
 
@@ -61,6 +61,10 @@ be staged without leaving a tail flit in an upstream dependency resource.
 - `ESCAPE ABSORB START` and `ESCAPE ABSORB COMPLETE`;
 - `ESCAPE REINJECTED`;
 - `RECOVERED PACKET DELIVERED`.
+
+The final statistics must also report all 24 packets (120 flits) injected and
+received.  This guards against declaring success after only a partial
+recovery.
 
 The run fails immediately if an escape buffer contains missing, duplicated,
 or out-of-order flits, or if the configured escape depth cannot hold the

@@ -147,7 +147,23 @@ count_record()
     fi
 }
 
-EXPECTED_STAGES=$((4 * VCS_PER_VNET))
+read_stat()
+{
+    local stat_name=$1
+    local file=$2
+
+    if [[ -f "${file}" ]]; then
+        awk -v name="${stat_name}" \
+            '$1 == name { value=$2; found=1; exit }
+             END { if (found) print value; else print 0 }' "${file}"
+    else
+        echo 0
+    fi
+}
+
+EXPECTED_STAGES=$((6 * VCS_PER_VNET))
+EXPECTED_PACKETS=${EXPECTED_STAGES}
+EXPECTED_FLITS=$((EXPECTED_PACKETS * 5))
 STAGE_COUNT=$(count_record "DEADLOCK STAGE" m5out/deadlock_injection.log)
 BARRIER_COUNT=$(count_record "DEADLOCK BARRIER RELEASED" m5out/deadlock_injection.log)
 CYCLE_COUNT=$(count_record "VC DEPENDENCY CYCLE" m5out/deadlock_injection.log)
@@ -157,6 +173,14 @@ ABSORB_START_COUNT=$(count_record "ESCAPE ABSORB START" m5out/deadlock.log)
 ABSORB_COMPLETE_COUNT=$(count_record "ESCAPE ABSORB COMPLETE" m5out/deadlock.log)
 REINJECTED_COUNT=$(count_record "ESCAPE REINJECTED" m5out/deadlock.log)
 DELIVERED_COUNT=$(count_record "RECOVERED PACKET DELIVERED" m5out/deadlock.log)
+PACKETS_INJECTED=$(read_stat \
+    "system.ruby.network.packets_injected::total" m5out/stats.txt)
+PACKETS_RECEIVED=$(read_stat \
+    "system.ruby.network.packets_received::total" m5out/stats.txt)
+FLITS_INJECTED=$(read_stat \
+    "system.ruby.network.flits_injected::total" m5out/stats.txt)
+FLITS_RECEIVED=$(read_stat \
+    "system.ruby.network.flits_received::total" m5out/stats.txt)
 
 VALIDATION_STATUS="FAIL"
 if (( GEM5_STATUS == 0 &&
@@ -168,7 +192,11 @@ if (( GEM5_STATUS == 0 &&
       ABSORB_START_COUNT >= 1 &&
       ABSORB_COMPLETE_COUNT >= 1 &&
       REINJECTED_COUNT >= 1 &&
-      DELIVERED_COUNT >= 1 )); then
+      DELIVERED_COUNT >= 1 &&
+      PACKETS_INJECTED == EXPECTED_PACKETS &&
+      PACKETS_RECEIVED == EXPECTED_PACKETS &&
+      FLITS_INJECTED == EXPECTED_FLITS &&
+      FLITS_RECEIVED == EXPECTED_FLITS )); then
     VALIDATION_STATUS="PASS"
 fi
 
@@ -176,6 +204,8 @@ cat > "${SUMMARY_FILE}" <<EOF
 UHAF deterministic deadlock validation: ${VALIDATION_STATUS}
 gem5_exit_status: ${GEM5_STATUS}
 expected_deadlock_stages: ${EXPECTED_STAGES}
+expected_packets: ${EXPECTED_PACKETS}
+expected_flits: ${EXPECTED_FLITS}
 deadlock_stage_count: ${STAGE_COUNT}
 barrier_release_count: ${BARRIER_COUNT}
 dependency_cycle_count: ${CYCLE_COUNT}
@@ -185,6 +215,10 @@ escape_absorb_start_count: ${ABSORB_START_COUNT}
 escape_absorb_complete_count: ${ABSORB_COMPLETE_COUNT}
 escape_reinjected_count: ${REINJECTED_COUNT}
 recovered_packet_delivered_count: ${DELIVERED_COUNT}
+packets_injected: ${PACKETS_INJECTED}
+packets_received: ${PACKETS_RECEIVED}
+flits_injected: ${FLITS_INJECTED}
+flits_received: ${FLITS_RECEIVED}
 EOF
 
 if [[ -f m5out/deadlock.log ]]; then
