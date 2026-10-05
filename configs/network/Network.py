@@ -116,7 +116,7 @@ def define_options(parser):
              "(2, 3, or 4; default: 3)")
     parser.add_argument(
         "--health-propagation-cycles", action="store", type=int, default=1,
-        help="registered health-score sideband latency in cycles")
+        help="registered health-score sideband latency per hop in cycles")
     parser.add_argument(
         "--up-health-monitor", action="store",
         type=int, default=1,

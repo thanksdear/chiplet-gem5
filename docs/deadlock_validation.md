@@ -69,11 +69,14 @@ be staged without leaving a tail flit in an upstream dependency resource.
 
 The escape buffer is single-ported in the timing model: absorption and local
 reinjection each transfer at most one flit per cycle.  Health scores become
-visible to a peer only after `health_propagation_cycles` registered sideband
-cycles.  Consequently, with a 100-cycle stall threshold and the default
-one-cycle registered propagation, detection cannot occur earlier than 101
-cycles after cycle formation.  A five-flit packet also requires at least five
-cycles for absorption and five cycles for local reinjection.
+visible to a peer only after
+`shortest_path_hops * health_propagation_cycles` registered sideband cycles.
+The four gateways belonging to one chiplet form a 2x2 square, so a peer is
+one hop away when adjacent and two hops away when diagonal.  Consequently,
+with a 100-cycle stall threshold and the default one-cycle-per-hop setting,
+detection cannot occur earlier than 101 cycles for an adjacent detector or
+102 cycles for a diagonal detector.  A five-flit packet also requires at
+least five cycles for absorption and five cycles for local reinjection.
 
 The final statistics must also report all 24 packets (120 flits) injected and
 received.  This guards against declaring success after only a partial

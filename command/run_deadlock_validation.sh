@@ -94,7 +94,7 @@ interposer_stall_threshold: ${STALL_THRESHOLD}
 garnet_deadlock_threshold: ${GARNET_DEADLOCK_THRESHOLD}
 escape_buffer_depth: ${ESCAPE_BUFFER_DEPTH}
 health_score_bits: ${HEALTH_BITS}
-health_propagation_cycles: ${HEALTH_PROPAGATION_CYCLES}
+health_propagation_cycles_per_hop: ${HEALTH_PROPAGATION_CYCLES}
 up_health_monitor: ${UP_HEALTH_MONITOR}
 health_monitor_alpha: ${HEALTH_ALPHA}
 health_severe_bias: ${HEALTH_SEVERE_BIAS}
@@ -194,7 +194,6 @@ read_first_log_value()
 EXPECTED_STAGES=$((6 * BLOCKED_VCS_PER_VNET))
 EXPECTED_PACKETS=${EXPECTED_STAGES}
 EXPECTED_FLITS=$((EXPECTED_PACKETS * PACKET_FLITS))
-EXPECTED_MIN_DETECTION_LATENCY=$((STALL_THRESHOLD + HEALTH_PROPAGATION_CYCLES))
 STAGE_COUNT=$(count_record "DEADLOCK STAGE" m5out/deadlock_injection.log)
 BARRIER_COUNT=$(count_record "DEADLOCK BARRIER RELEASED" m5out/deadlock_injection.log)
 CYCLE_COUNT=$(count_record "VC DEPENDENCY CYCLE" m5out/deadlock_injection.log)
@@ -209,6 +208,10 @@ FULL_RECOVERY_COUNT=$(count_record \
     "DEADLOCK FULL RECOVERY COMPLETE" m5out/deadlock.log)
 DETECTION_LATENCY=$(read_first_log_value \
     "detection_latency_cycles" m5out/deadlock.log)
+DETECTION_PATH_HOPS=$(read_first_log_value \
+    "detection_health_path_hops" m5out/deadlock.log)
+EXPECTED_MIN_DETECTION_LATENCY=$((STALL_THRESHOLD + \
+    DETECTION_PATH_HOPS * HEALTH_PROPAGATION_CYCLES))
 ABSORPTION_LATENCY=$(read_first_log_value \
     "absorption_cycles" m5out/deadlock.log)
 REINJECTION_LATENCY=$(read_first_log_value \
@@ -229,6 +232,7 @@ if (( GEM5_STATUS == 0 &&
       CYCLE_COUNT == 1 &&
       DETECTED_COUNT >= 1 &&
       LATENCY_COUNT >= 1 &&
+      DETECTION_PATH_HOPS >= 1 &&
       DETECTION_LATENCY >= EXPECTED_MIN_DETECTION_LATENCY &&
       HEALTH_RECEIVED_COUNT >= 1 &&
       ABSORB_START_COUNT >= 1 &&
@@ -258,6 +262,7 @@ deadlock_detected_count: ${DETECTED_COUNT}
 detection_latency_record_count: ${LATENCY_COUNT}
 expected_min_detection_latency_cycles: ${EXPECTED_MIN_DETECTION_LATENCY}
 first_detection_latency_cycles: ${DETECTION_LATENCY}
+detection_health_path_hops: ${DETECTION_PATH_HOPS}
 zero_health_received_count: ${HEALTH_RECEIVED_COUNT}
 escape_absorb_start_count: ${ABSORB_START_COUNT}
 escape_absorb_complete_count: ${ABSORB_COMPLETE_COUNT}
