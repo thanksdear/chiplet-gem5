@@ -51,7 +51,6 @@ EscapeBuffer::EscapeBuffer(Router *router, int inport, int capacity)
       m_occupied(false),
       m_absorbing(false),
       m_source_vc(-1),
-      m_source_vnet(-1),
       m_absorb_time(0),
       m_reinject_vc(-1),
       m_absorb_count(0),
@@ -80,7 +79,6 @@ EscapeBuffer::startAbsorb(InputUnit *input_unit, int vc, Tick curTick)
     assert(head->get_type() == HEAD_ || head->get_type() == HEAD_TAIL_);
 
     m_source_vc = vc;
-    m_source_vnet = head->get_vnet();
     m_absorb_time = curTick;
     m_occupied = true;
     m_reinject_vc = -1;
@@ -96,11 +94,12 @@ EscapeBuffer::startAbsorb(InputUnit *input_unit, int vc, Tick curTick)
 
         const bool is_tail = f->get_type() == TAIL_ ||
                              f->get_type() == HEAD_TAIL_;
-        // Locally re-injected flits did not consume a physical-link credit.
-        // If one is absorbed again, returning another credit would overflow
-        // the upstream OutVcState credit count.
-        if (!f->is_escape_reinjected())
-            input_unit->increment_credit(vc, is_tail, curTick);
+        // Return slots as the packet is removed, but retain ownership of the
+        // physical VC by withholding the tail credit/free signal.  That last
+        // credit is returned only when the re-injected tail really leaves.
+        // A locally re-injected flit consumed no new physical-link credit.
+        if (!f->is_escape_reinjected() && !is_tail)
+            input_unit->increment_credit(vc, false, curTick);
 
         if (is_tail) {
             got_tail = true;
@@ -163,8 +162,8 @@ EscapeBuffer::continueAbsorb(InputUnit *input_unit, Tick curTick)
         // Send credit back for this flit
         bool is_tail = (f->get_type() == TAIL_ ||
                         f->get_type() == HEAD_TAIL_);
-        if (!f->is_escape_reinjected())
-            input_unit->increment_credit(vc, is_tail, curTick);
+        if (!f->is_escape_reinjected() && !is_tail)
+            input_unit->increment_credit(vc, false, curTick);
 
         if (is_tail) {
             m_absorbing = false;
@@ -204,10 +203,13 @@ EscapeBuffer::tryReinject(InputUnit *input_unit, Router *router, Tick curTick)
         return true;
     }
 
-    // Find a free VC in the same vnet on this input port
-    int target_vc = findFreeVc(input_unit, m_source_vnet);
-    if (target_vc < 0)
-        return false;  // no free VC available
+    // Reuse the original VC.  Its upstream output VC deliberately remains
+    // ACTIVE until the re-injected tail returns the deferred free signal, so
+    // selecting a different locally-IDLE VC could collide with a new head
+    // already in flight from upstream.
+    int target_vc = m_source_vc;
+    if (target_vc < 0 || input_unit->get_vc_state(target_vc) != IDLE_)
+        return false;
 
     doReinject(input_unit, router, target_vc, curTick);
     return true;
@@ -230,19 +232,6 @@ EscapeBuffer::forceReinject(InputUnit *input_unit, Router *router,
 // ================================================================
 // Helpers
 // ================================================================
-
-int
-EscapeBuffer::findFreeVc(InputUnit *input_unit, int vnet)
-{
-    int vc_per_vnet = m_router->get_vc_per_vnet();
-    int vc_base = vnet * vc_per_vnet;
-
-    for (int v = vc_base; v < vc_base + vc_per_vnet; v++) {
-        if (input_unit->get_vc_state(v) == IDLE_)
-            return v;
-    }
-    return -1;
-}
 
 void
 EscapeBuffer::doReinject(InputUnit *input_unit, Router *router,

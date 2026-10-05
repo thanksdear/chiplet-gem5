@@ -264,8 +264,11 @@ SwitchAllocator::arbitrate_outports()
 
             assert(!(input_unit->isReady(invc, curTick())));
             input_unit->set_vc_idle(invc, curTick());
-            if (!escape_reinjected)
-                input_unit->increment_credit(invc, true, curTick());
+            // For a re-injected packet, absorption returned every slot
+            // except the tail slot and kept the physical VC ACTIVE upstream.
+            // This returns that deferred credit and free signal.  For a
+            // normal packet, this is the ordinary tail credit.
+            input_unit->increment_credit(invc, true, curTick());
         } else if (!escape_reinjected) {
             input_unit->increment_credit(invc, false, curTick());
         }

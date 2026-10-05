@@ -101,9 +101,6 @@ class EscapeBuffer
     uint64_t getForceReinjectCount() const { return m_force_reinject_count; }
 
   private:
-    // Find a free VC in the same vnet on the given input port
-    int findFreeVc(InputUnit *input_unit, int vnet);
-
     // Stream buffered flits into the target VC without exceeding its depth.
     void doReinject(InputUnit *input_unit, Router *router,
                     int target_vc, Tick curTick);
@@ -116,7 +113,6 @@ class EscapeBuffer
     bool m_occupied;     // buffer holds a packet
     bool m_absorbing;    // still absorbing (waiting for tail)
     int m_source_vc;     // VC we absorbed from
-    int m_source_vnet;   // vnet of the absorbed packet
     Tick m_absorb_time;  // tick when absorption started
     int m_reinject_vc;   // VC we are re-injecting into (-1 if not yet)
 
