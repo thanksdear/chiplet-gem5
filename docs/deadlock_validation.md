@@ -36,6 +36,7 @@ build/Garnet_standalone/gem5.opt \
   --routing-algorithm=4 \
   --synthetic=deadlock_ring \
   --vcs-per-vnet=4 \
+  --buffers-per-data-vc=5 \
   --interposer-stall-threshold=100 \
   --escape-buffer-depth=5 \
   --sim-cycles=3000
@@ -43,6 +44,8 @@ build/Garnet_standalone/gem5.opt \
 
 The test automatically selects vnet 2, injection rate 1.0, four participating
 sources, and `vcs_per_vnet` packets per source.
+Each data VC must have at least five slots so a complete five-flit packet can
+be staged without leaving a tail flit in an upstream dependency resource.
 
 ## Evidence and pass criteria
 
