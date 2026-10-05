@@ -231,7 +231,7 @@ int
 RoutingUnit::outportComputeDeadlockTest(RouteInfo route,
                                         PortDirection inport_dirn)
 {
-    if (route.vnet != 2 || route.src_router < 0 || route.src_router > 3)
+    if (route.vnet != 2 || route.src_router < 0 || route.src_router > 5)
         return -1;
 
     const int router = m_router->get_id();
@@ -265,16 +265,26 @@ RoutingUnit::outportComputeDeadlockTest(RouteInfo route,
             direction = "West";
         break;
       case 3:
-        if ((router == 1 || router == 2 || router == 3) &&
-            inport_dirn == (router == 3 ? "Local" : "East")) {
+        if ((router == 1 || router == 2) && inport_dirn == "East") {
             direction = "West";
-        } else if (router == 0 && inport_dirn == "East") {
-            direction = "Down";
-        } else if (router == first_ir && inport_dirn == "Up") {
-            direction = "Up";
-        } else if (router == 0 && inport_dirn == "Down") {
-            direction = "South";
+        } else if (router == 3 && inport_dirn == "Local") {
+            direction = "West";
         }
+        break;
+      case 4:
+        if ((router == 4 || router == 5) &&
+            inport_dirn == (router == 4 ? "Local" : "West"))
+            direction = "East";
+        else if (router == 6 && inport_dirn == "West") direction = "North";
+        else if (router == 2 && inport_dirn == "South") direction = "West";
+        else if (router == 1 && inport_dirn == "East") direction = "West";
+        break;
+      case 5:
+        if (router == 5 && inport_dirn == "Local") direction = "North";
+        else if (router == 1 && inport_dirn == "South") direction = "West";
+        else if (router == 0 && inport_dirn == "East") direction = "Down";
+        else if (router == first_ir && inport_dirn == "Up") direction = "Up";
+        else if (router == 0 && inport_dirn == "Down") direction = "South";
         break;
       default:
         break;

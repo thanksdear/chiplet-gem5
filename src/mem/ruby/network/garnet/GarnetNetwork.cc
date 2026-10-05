@@ -224,9 +224,15 @@ GarnetNetwork::holdDeadlockTestHead(int source_router, int router_id,
                      input_direction == "West";
         break;
       case 2:
-        wait_point = router_id == 1 && input_direction == "East";
+        wait_point = router_id == 3 && input_direction == "Down";
         break;
       case 3:
+        wait_point = router_id == 2 && input_direction == "East";
+        break;
+      case 4:
+        wait_point = router_id == 1 && input_direction == "East";
+        break;
+      case 5:
         wait_point = router_id == 0 && input_direction == "East";
         break;
       default:
@@ -246,10 +252,10 @@ GarnetNetwork::holdDeadlockTestHead(int source_router, int router_id,
             << " input=" << input_direction
             << " vc=" << input_vc
             << " staged=" << m_deadlock_test_staged_vcs.size()
-            << "/" << 4 * m_deadlock_test_vcs << std::endl;
+            << "/" << 6 * m_deadlock_test_vcs << std::endl;
     }
 
-    if (m_deadlock_test_staged_vcs.size() == 4 * m_deadlock_test_vcs) {
+    if (m_deadlock_test_staged_vcs.size() == 6 * m_deadlock_test_vcs) {
         m_deadlock_test_barrier_released = true;
         m_deadlock_test_formation_tick = curTick();
 
@@ -258,8 +264,8 @@ GarnetNetwork::holdDeadlockTestHead(int source_router, int router_id,
             << " staged_vcs=" << m_deadlock_test_staged_vcs.size()
             << std::endl;
         log << "[VC DEPENDENCY CYCLE] "
-            << "R0.Down -> IR0.East -> IR1.Up -> "
-            << "R1.West -> R0.Down" << std::endl;
+            << "R0.Down -> IR0.East -> IR1.Up -> R3.West -> "
+            << "R2.West -> R1.West -> R0.Down" << std::endl;
     }
 
     // Hold the last arriving head for this cycle as well.  Starting with the

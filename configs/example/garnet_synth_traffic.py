@@ -90,7 +90,7 @@ Ruby.define_options(parser)
 
 args = parser.parse_args()
 
-# Deterministic, opt-in validation workload.  Four staged flows form a
+# Deterministic, opt-in validation workload.  Six staged flows form a
 # cross-layer VC dependency cycle; ordinary traffic modes never enable the
 # corresponding routing and allocator hooks.
 if args.synthetic == "deadlock_ring":

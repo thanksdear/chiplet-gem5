@@ -361,7 +361,7 @@ class GarnetNetwork : public Network
     std::vector<int> m_ipdr_buffer_used;
     bool m_ipdr_global_recovery;
 
-    // Opt-in deterministic test barrier.  It only synchronizes the four
+    // Opt-in deterministic test barrier.  It only synchronizes the six
     // packet groups at their wait points; after release, normal Garnet
     // VC/credit dependencies must maintain the deadlock.
     std::set<std::tuple<int, int>> m_deadlock_test_staged_vcs;
