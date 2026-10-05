@@ -233,7 +233,7 @@ class Router : public BasicRouter, public Consumer
     Tick m_recovery_cooldown = 0;  // skip deadlock detection until this tick
 
     // ----- Escape buffer for deadlock recovery -----
-    // One EscapeBuffer per "Down" input port (chiplet → interposer)
+    // One EscapeBuffer per "Up" input port (chiplet → interposer)
     // Key: inport index, Value: escape buffer
     std::map<int, std::unique_ptr<EscapeBuffer>> m_escape_buffers;
 

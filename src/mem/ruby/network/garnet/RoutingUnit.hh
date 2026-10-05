@@ -100,6 +100,11 @@ class RoutingUnit
                            int inport,
                            PortDirection inport_dirn);
 
+    // Opt-in scripted path used only by the deterministic deadlock test.
+    // Returns -1 when the packet/router is not part of the test path.
+    int outportComputeDeadlockTest(RouteInfo route,
+                                   PortDirection inport_dirn);
+
     // Returns true if vnet is present in the vector
     // of vnets or if the vector supports all vnets.
     bool supportsVnet(int vnet, std::vector<int> sVnets);

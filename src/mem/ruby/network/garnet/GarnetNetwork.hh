@@ -35,6 +35,8 @@
 #include <cassert>
 #include <deque>
 #include <iostream>
+#include <set>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -103,6 +105,15 @@ class GarnetNetwork : public Network
     }
     uint32_t getInterposerStallThreshold() const
     { return m_interposer_stall_threshold; }
+    bool isDeadlockTestEnabled() const
+    { return m_deadlock_test_enabled; }
+    Tick getDeadlockTestFormationTick() const
+    { return m_deadlock_test_formation_tick; }
+    uint32_t getEscapeBufferDepth() const
+    { return m_escape_buffer_depth; }
+    bool holdDeadlockTestHead(int source_router, int router_id,
+                              int input_vc,
+                              PortDirection input_direction);
     uint32_t getHealthScoreBits() const { return m_health_score_bits; }
     int getHealthScoreMax() const
     { return (1U << m_health_score_bits) - 1; }
@@ -274,6 +285,9 @@ class GarnetNetwork : public Network
     uint32_t m_chiplet_mesh_cols;
     std::vector<int> m_lbdr_gateway_map;
     uint32_t m_interposer_stall_threshold;
+    bool m_deadlock_test_enabled;
+    uint32_t m_escape_buffer_depth;
+    uint32_t m_deadlock_test_vcs;
     uint32_t m_health_score_bits;
     uint32_t m_health_monitor_broadcast_interval;
     uint32_t m_health_monitor_change_threshold;
@@ -346,6 +360,13 @@ class GarnetNetwork : public Network
     std::vector<int> m_ipdr_dd_counter;
     std::vector<int> m_ipdr_buffer_used;
     bool m_ipdr_global_recovery;
+
+    // Opt-in deterministic test barrier.  It only synchronizes the four
+    // packet groups at their wait points; after release, normal Garnet
+    // VC/credit dependencies must maintain the deadlock.
+    std::set<std::tuple<int, int>> m_deadlock_test_staged_vcs;
+    bool m_deadlock_test_barrier_released = false;
+    Tick m_deadlock_test_formation_tick = 0;
 };
 
 inline std::ostream&

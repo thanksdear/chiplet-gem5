@@ -55,7 +55,7 @@ class InputUnit;
 // becomes available on the same input port, the flits are re-injected
 // and re-routed through normal pipeline stages.
 //
-// Each interposer router has one EscapeBuffer per "Down" input port
+// Each interposer router has one EscapeBuffer per "Up" input port
 // (the port receiving flits from the chiplet above).
 
 class EscapeBuffer
@@ -78,9 +78,9 @@ class EscapeBuffer
     // input port. Returns true if re-injection completed or is in progress.
     bool tryReinject(InputUnit *input_unit, Router *router, Tick curTick);
 
-    // --- Force re-inject ---
-    // Force-occupy a VC when max wait time exceeded.
-    // Returns true if a VC was seized and re-injection started.
+    // --- Delayed re-inject retry ---
+    // Retains the legacy method name, but never occupies an ACTIVE VC.
+    // Returns true if legal reinjection started or remains in progress.
     bool forceReinject(InputUnit *input_unit, Router *router, Tick curTick);
 
     // --- Queries ---
@@ -108,7 +108,7 @@ class EscapeBuffer
     // Find a free VC in the same vnet on the given input port
     int findFreeVc(InputUnit *input_unit, int vnet);
 
-    // Re-insert all buffered flits into the target VC
+    // Stream buffered flits into the target VC without exceeding its depth.
     void doReinject(InputUnit *input_unit, Router *router,
                     int target_vc, Tick curTick);
 

@@ -258,15 +258,19 @@ SwitchAllocator::arbitrate_outports()
         m_router->grant_switch(inport, t_flit);
         m_output_arbiter_activity++;
 
+        const bool escape_reinjected = t_flit->is_escape_reinjected();
         if ((t_flit->get_type() == TAIL_) ||
             t_flit->get_type() == HEAD_TAIL_) {
 
             assert(!(input_unit->isReady(invc, curTick())));
             input_unit->set_vc_idle(invc, curTick());
-            input_unit->increment_credit(invc, true, curTick());
-        } else {
+            if (!escape_reinjected)
+                input_unit->increment_credit(invc, true, curTick());
+        } else if (!escape_reinjected) {
             input_unit->increment_credit(invc, false, curTick());
         }
+        if (escape_reinjected)
+            t_flit->set_escape_reinjected(false);
 
         // remove this request
         m_port_requests[inport] = -1;
@@ -302,6 +306,17 @@ SwitchAllocator::send_allowed(int inport, int invc, int outport, int outvc)
     // Check if outvc needed
     // Check if credit needed (for multi-flit packet)
     // Check if ordering violated (in ordered vnet)
+
+    auto input_unit = m_router->getInputUnit(inport);
+    flit *candidate = input_unit->peekTopFlit(invc);
+    if ((candidate->get_type() == HEAD_ ||
+         candidate->get_type() == HEAD_TAIL_) &&
+        m_router->get_net_ptr()->holdDeadlockTestHead(
+            candidate->get_route().src_router,
+            m_router->get_id(), invc,
+            input_unit->get_direction())) {
+        return false;
+    }
 
     int vnet = get_vnet(invc);
     bool has_outvc = (outvc != -1);
@@ -362,8 +377,6 @@ SwitchAllocator::send_allowed(int inport, int invc, int outport, int outvc)
 
     // protocol ordering check
     if ((m_router->get_net_ptr())->isVNetOrdered(vnet)) {
-        auto input_unit = m_router->getInputUnit(inport);
-
         // enqueue time of this flit
         Tick t_enqueue_time = input_unit->get_enqueue_time(invc);
 

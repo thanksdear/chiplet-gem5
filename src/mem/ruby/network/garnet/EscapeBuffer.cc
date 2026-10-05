@@ -28,7 +28,9 @@
 #include "mem/ruby/network/garnet/EscapeBuffer.hh"
 
 #include <cassert>
+#include <fstream>
 
+#include "base/logging.hh"
 #include "debug/RubyNetwork.hh"
 #include "mem/ruby/network/garnet/InputUnit.hh"
 #include "mem/ruby/network/garnet/Router.hh"
@@ -116,6 +118,21 @@ EscapeBuffer::startAbsorb(InputUnit *input_unit, int vc, Tick curTick)
 
     m_absorb_count++;
 
+    {
+        std::ofstream log("m5out/deadlock.log", std::ios::app);
+        log << "[ESCAPE ABSORB START] tick=" << curTick
+            << " Router " << m_router->get_id()
+            << " inport=" << m_inport
+            << " vc=" << vc
+            << " flits=" << absorbed
+            << " complete=" << got_tail << std::endl;
+        if (got_tail) {
+            log << "[ESCAPE ABSORB COMPLETE] tick=" << curTick
+                << " Router " << m_router->get_id()
+                << " flits=" << m_buffer.size() << std::endl;
+        }
+    }
+
     DPRINTF(RubyNetwork,
             "EscapeBuffer Router %d inport %d: started absorb from vc %d, "
             "absorbed %d flits, got_tail=%d\n",
@@ -148,6 +165,11 @@ EscapeBuffer::continueAbsorb(InputUnit *input_unit, Tick curTick)
             // Free the source VC
             input_unit->set_vc_idle(vc, curTick);
 
+            std::ofstream log("m5out/deadlock.log", std::ios::app);
+            log << "[ESCAPE ABSORB COMPLETE] tick=" << curTick
+                << " Router " << m_router->get_id()
+                << " flits=" << m_buffer.size() << std::endl;
+
             DPRINTF(RubyNetwork,
                     "EscapeBuffer Router %d inport %d: absorb complete, "
                     "total %d flits\n",
@@ -170,9 +192,11 @@ EscapeBuffer::tryReinject(InputUnit *input_unit, Router *router, Tick curTick)
     if (!m_occupied || m_absorbing || m_buffer.empty())
         return false;
 
-    // Already re-injecting?
-    if (m_reinject_vc >= 0)
-        return true;  // in progress from a prior cycle
+    // Continue a packet-level reinjection started in a prior cycle.
+    if (m_reinject_vc >= 0) {
+        doReinject(input_unit, router, m_reinject_vc, curTick);
+        return true;
+    }
 
     // Find a free VC in the same vnet on this input port
     int target_vc = findFreeVc(input_unit, m_source_vnet);
@@ -187,47 +211,14 @@ bool
 EscapeBuffer::forceReinject(InputUnit *input_unit, Router *router,
                             Tick curTick)
 {
-    if (!m_occupied || m_absorbing || m_buffer.empty())
-        return false;
-
-    if (m_reinject_vc >= 0)
-        return true;  // already re-injecting
-
-    // Try normal free VC first
-    int target_vc = findFreeVc(input_unit, m_source_vnet);
-    if (target_vc < 0) {
-        // Force: pick any VC in the same vnet, even if ACTIVE
-        // Choose the one with smallest buffer occupancy
-        int vc_per_vnet = router->get_vc_per_vnet();
-        int vc_base = m_source_vnet * vc_per_vnet;
-        int best_vc = -1;
-        int best_size = m_capacity + 1;
-
-        for (int v = vc_base; v < vc_base + vc_per_vnet; v++) {
-            // Skip the original source VC to avoid re-blocking
-            if (v == m_source_vc)
-                continue;
-            int sz = input_unit->getVcBufferSize(v);
-            if (sz < best_size) {
-                best_size = sz;
-                best_vc = v;
-            }
-        }
-
-        if (best_vc < 0)
-            return false;  // should not happen
-
-        target_vc = best_vc;
+    // Never overwrite an ACTIVE VC.  The former fallback could merge two
+    // packets in one VC and invalidate both ordering and credit accounting.
+    // A watchdog may report the wait, but reinjection remains legal only
+    // when an IDLE VC exists.
+    bool reinjected = tryReinject(input_unit, router, curTick);
+    if (reinjected)
         m_force_reinject_count++;
-
-        DPRINTF(RubyNetwork,
-                "EscapeBuffer Router %d inport %d: FORCE reinject "
-                "into vc %d (buf_size=%d)\n",
-                m_router->get_id(), m_inport, target_vc, best_size);
-    }
-
-    doReinject(input_unit, router, target_vc, curTick);
-    return true;
+    return reinjected;
 }
 
 // ================================================================
@@ -262,25 +253,52 @@ void
 EscapeBuffer::doReinject(InputUnit *input_unit, Router *router,
                          int target_vc, Tick curTick)
 {
-    m_reinject_vc = target_vc;
+    if (m_reinject_vc < 0) {
+        fatal_if(m_buffer.empty(),
+                 "EscapeBuffer Router %d attempted empty reinjection",
+                 m_router->get_id());
 
-    // Activate the target VC
-    input_unit->set_vc_active(target_vc, curTick);
+        const int packet_flits = m_buffer.front()->get_size();
+        int expected_id = 0;
+        for (const flit *f : m_buffer) {
+            fatal_if(f->get_id() != expected_id,
+                     "EscapeBuffer Router %d flit ordering error: "
+                     "expected id %d, got %d",
+                     m_router->get_id(), expected_id, f->get_id());
+            expected_id++;
+        }
+        fatal_if(expected_id != packet_flits ||
+                 (m_buffer.back()->get_type() != TAIL_ &&
+                  m_buffer.back()->get_type() != HEAD_TAIL_),
+                 "EscapeBuffer Router %d incomplete packet: stored %d of "
+                 "%d flits",
+                 m_router->get_id(), expected_id, packet_flits);
 
-    // Re-route the head flit
-    flit *head = m_buffer.front();
-    int outport = router->route_compute(head->get_route(),
-                                        m_inport,
-                                        input_unit->get_direction());
-    input_unit->grant_outport(target_vc, outport);
+        m_reinject_vc = target_vc;
+        input_unit->set_vc_active(target_vc, curTick);
 
-    // Insert all flits into the target VC
-    while (!m_buffer.empty()) {
+        flit *head = m_buffer.front();
+        int outport = router->route_compute(head->get_route(),
+                                            m_inport,
+                                            input_unit->get_direction(),
+                                            head);
+        input_unit->grant_outport(target_vc, outport);
+    }
+
+    const int vc_capacity =
+        router->get_net_ptr()->getBuffersPerDataVC();
+    int free_slots = vc_capacity - input_unit->getVcBufferSize(target_vc);
+    while (!m_buffer.empty() && free_slots > 0) {
         flit *f = m_buffer.front();
         m_buffer.pop_front();
 
         // Update flit's VC to the new target
         f->set_vc(target_vc);
+        // Credits for this physical input were already returned while the
+        // packet was absorbed.  Suppress exactly one second credit when this
+        // flit leaves the reinjection router.
+        f->set_escape_reinjected(true);
+        f->set_recovery(true);
 
         // Re-enter SA stage
         Cycles pipe_stages = router->get_pipe_stages();
@@ -292,22 +310,30 @@ EscapeBuffer::doReinject(InputUnit *input_unit, Router *router,
         }
 
         input_unit->insertFlit(target_vc, f);
+        free_slots--;
     }
 
-    // Clear escape buffer state
-    m_occupied = false;
-    m_absorbing = false;
-    m_source_vc = -1;
-    m_reinject_vc = -1;
+    if (m_buffer.empty()) {
+        const int outport = input_unit->get_outport(target_vc);
+        std::ofstream log("m5out/deadlock.log", std::ios::app);
+        log << "[ESCAPE REINJECTED] tick=" << curTick
+            << " Router " << m_router->get_id()
+            << " target_vc=" << target_vc
+            << " outport=" << outport << std::endl;
 
-    m_reinject_count++;
+        DPRINTF(RubyNetwork,
+                "EscapeBuffer Router %d inport %d: reinjected into vc %d, "
+                "outport %d\n",
+                m_router->get_id(), m_inport, target_vc, outport);
 
-    DPRINTF(RubyNetwork,
-            "EscapeBuffer Router %d inport %d: reinjected into vc %d, "
-            "outport %d\n",
-            m_router->get_id(), m_inport, target_vc, outport);
+        m_occupied = false;
+        m_absorbing = false;
+        m_source_vc = -1;
+        m_reinject_vc = -1;
+        m_reinject_count++;
+    }
 
-    // Schedule router wakeup to process the re-injected flits
+    // Process transferred flits and, if needed, continue streaming later.
     router->schedule_wakeup(Cycles(1));
 }
 

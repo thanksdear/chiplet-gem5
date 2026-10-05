@@ -86,6 +86,8 @@ flit::serialize(int ser_id, int parts, uint32_t bWidth)
                     new_size, m_msg_ptr, msgSize, bWidth, m_time);
     fl->set_enqueue_time(m_enqueue_time);
     fl->set_src_delay(src_delay);
+    fl->set_escape_reinjected(m_escape_reinjected);
+    fl->set_recovery(m_recovery);
     return fl;
 }
 
@@ -101,6 +103,8 @@ flit::deserialize(int des_id, int num_flits, uint32_t bWidth)
                     new_size, m_msg_ptr, msgSize, bWidth, m_time);
     fl->set_enqueue_time(m_enqueue_time);
     fl->set_src_delay(src_delay);
+    fl->set_escape_reinjected(m_escape_reinjected);
+    fl->set_recovery(m_recovery);
     return fl;
 }
 

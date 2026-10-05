@@ -177,11 +177,12 @@ Router::init()
         }
     }
 
-    // Create escape buffers for "Down" input ports (chiplet → interposer)
+    // Create escape buffers for "Up" input ports (chiplet → interposer).
+    // Chiplet2_5D names the receiver side of the downward TSV "Up".
     if (m_is_interposer) {
-        int buf_depth = m_network_ptr->getBuffersPerDataVC();
+        int buf_depth = m_network_ptr->getEscapeBufferDepth();
         for (int i = 0; i < (int)m_input_unit.size(); i++) {
-            if (m_input_unit[i]->get_direction() == "Down") {
+            if (m_input_unit[i]->get_direction() == "Up") {
                 m_escape_buffers[i] = std::make_unique<EscapeBuffer>(
                     this, i, buf_depth);
             }
@@ -231,8 +232,9 @@ Router::wakeup()
     // Interposer VC monitoring: sample active VCs every wakeup cycle
     // ---------------------------------------------------------------
     if (m_is_interposer) {
+        // InputUnit::sampleVcStall() counts router wakeup cycles, not ticks.
         Tick STALL_THRESHOLD =
-            m_network_ptr->getInterposerStallThreshold() * clockPeriod();
+            m_network_ptr->getInterposerStallThreshold();
 
         // --- Step 1: Check Up InputUnit (chiplet → interposer) ---
         bool any_input_stall = false;
@@ -457,6 +459,15 @@ Router::wakeup()
                  << " Router " << m_id
                  << " (chiplet " << m_chiplet_id << ")"
                  << std::endl;
+            if (m_network_ptr->isDeadlockTestEnabled() &&
+                m_network_ptr->getDeadlockTestFormationTick() > 0) {
+                const Tick formed =
+                    m_network_ptr->getDeadlockTestFormationTick();
+                logf << "  formation_tick=" << formed
+                     << " detection_latency_cycles="
+                     << (curTick() - formed) / clockPeriod()
+                     << std::endl;
+            }
             logf << "  Peer Router " << dead_peer_id
                  << " Up channel dead (S=0)" << std::endl;
             Tick stall_threshold =
@@ -565,14 +576,15 @@ Router::escapeBufferTick()
         if (!esc->isEmpty()) {
             bool ok = esc->tryReinject(iu, this, curTick());
             if (!ok && esc->isWaitExpired(curTick(), max_wait)) {
-                // Waited too long — force re-inject
-                esc->forceReinject(iu, this, curTick());
-
-                std::ofstream logf("m5out/deadlock.log", std::ios::app);
-                logf << "[ESCAPE FORCE REINJECT] tick=" << curTick()
-                     << " Router " << m_id
-                     << " inport " << inport << std::endl;
-                logf.close();
+                // Retry, but never overwrite an ACTIVE VC.
+                bool delayed = esc->forceReinject(iu, this, curTick());
+                if (delayed) {
+                    std::ofstream logf("m5out/deadlock.log",
+                                       std::ios::app);
+                    logf << "[ESCAPE DELAYED REINJECT] tick=" << curTick()
+                         << " Router " << m_id
+                         << " inport " << inport << std::endl;
+                }
             }
         }
     }

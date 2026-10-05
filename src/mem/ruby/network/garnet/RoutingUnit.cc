@@ -183,6 +183,17 @@ RoutingUnit::outportCompute(RouteInfo route, int inport,
         return outport;
     }
 
+    if (m_router->get_net_ptr()->isDeadlockTestEnabled()) {
+        outport = outportComputeDeadlockTest(route, inport_dirn);
+        if (outport >= 0)
+            return outport;
+    }
+
+    // A recovered packet must not immediately re-enter UHAF redirection.
+    // Deterministic chiplet/interposer XY gives it a monotonic escape path.
+    if (t_flit != nullptr && t_flit->is_recovery())
+        return outportComputeChipletXY(route, inport, inport_dirn);
+
     // Routing Algorithm set in GarnetNetwork.py
     // Can be over-ridden from command line using --routing-algorithm = 1
     RoutingAlgorithm routing_algorithm =
@@ -214,6 +225,69 @@ RoutingUnit::outportCompute(RouteInfo route, int inport,
 
     assert(outport != -1);
     return outport;
+}
+
+int
+RoutingUnit::outportComputeDeadlockTest(RouteInfo route,
+                                        PortDirection inport_dirn)
+{
+    if (route.vnet != 2 || route.src_router < 0 || route.src_router > 3)
+        return -1;
+
+    const int router = m_router->get_id();
+    const int first_ir = static_cast<int>(
+        m_router->get_net_ptr()->getFirstInterposerRouterId());
+    PortDirection direction = "Unknown";
+
+    switch (route.src_router) {
+      case 0:
+        if (router == 0 && inport_dirn == "Local") direction = "Down";
+        else if (router == first_ir && inport_dirn == "Up")
+            direction = "East";
+        else if (router == first_ir + 1 && inport_dirn == "West")
+            direction = "Up";
+        break;
+      case 1:
+        if (router == 1 && inport_dirn == "Local") direction = "West";
+        else if (router == 0 && inport_dirn == "East") direction = "Down";
+        else if (router == first_ir && inport_dirn == "Up")
+            direction = "East";
+        else if (router == first_ir + 1 && inport_dirn == "West")
+            direction = "Up";
+        break;
+      case 2:
+        if (router == 2 && inport_dirn == "Local") direction = "East";
+        else if (router == 3 && inport_dirn == "West") direction = "Down";
+        else if (router == first_ir + 1 && inport_dirn == "Up")
+            direction = "Up";
+        else if (router == 3 && inport_dirn == "Down") direction = "West";
+        else if ((router == 1 || router == 2) && inport_dirn == "East")
+            direction = "West";
+        break;
+      case 3:
+        if ((router == 1 || router == 2 || router == 3) &&
+            inport_dirn == (router == 3 ? "Local" : "East")) {
+            direction = "West";
+        } else if (router == 0 && inport_dirn == "East") {
+            direction = "Down";
+        } else if (router == first_ir && inport_dirn == "Up") {
+            direction = "Up";
+        } else if (router == 0 && inport_dirn == "Down") {
+            direction = "South";
+        }
+        break;
+      default:
+        break;
+    }
+
+    if (direction == "Unknown")
+        return -1;
+
+    auto it = m_outports_dirn2idx.find(direction);
+    fatal_if(it == m_outports_dirn2idx.end(),
+             "deadlock test route: router %d has no %s outport",
+             router, direction);
+    return it->second;
 }
 
 // XY routing implemented using port directions
