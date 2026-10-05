@@ -100,6 +100,9 @@ if args.synthetic == "deadlock_ring":
         parser.error("deadlock_ring requires --routing-algorithm=4 (UHAF)")
     if args.num_chiplets < 1 or args.num_cpus < 16:
         parser.error("deadlock_ring requires at least one 4x4 chiplet")
+    if args.buffers_per_data_vc < 5:
+        parser.error("deadlock_ring requires --buffers-per-data-vc >= 5 "
+                     "to stage each complete five-flit packet")
     args.inj_vnet = 2
     args.injectionrate = 1.0
     args.num_packets_max = args.vcs_per_vnet

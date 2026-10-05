@@ -65,6 +65,9 @@ def define_options(parser):
         help="""number of virtual channels per virtual network
             inside garnet network.""")
     parser.add_argument(
+        "--buffers-per-data-vc", action="store", type=int, default=4,
+        help="number of flit buffers per data virtual channel")
+    parser.add_argument(
         "--routing-algorithm", action="store", type=int,
         default=0,
         help="""routing algorithm in network.
@@ -168,6 +171,7 @@ def init_network(options, network, InterfaceClass):
     if options.network == "garnet":
         network.num_rows = options.mesh_rows
         network.vcs_per_vnet = options.vcs_per_vnet
+        network.buffers_per_data_vc = options.buffers_per_data_vc
         network.ni_flit_size = options.link_width_bits / 8
         network.routing_algorithm = options.routing_algorithm
         if options.num_chiplets <= 0:

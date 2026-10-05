@@ -25,6 +25,7 @@ NUM_DIRS=64
 ROUTING_ALGORITHM=4
 SYNTHETIC="deadlock_ring"
 VCS_PER_VNET=4
+BUFFERS_PER_DATA_VC=5
 SIM_CYCLES=3000
 STALL_THRESHOLD=100
 GARNET_DEADLOCK_THRESHOLD=50000
@@ -77,6 +78,7 @@ num_dirs: ${NUM_DIRS}
 routing_algorithm: ${ROUTING_ALGORITHM} (UHAF)
 synthetic: ${SYNTHETIC}
 vcs_per_vnet: ${VCS_PER_VNET}
+buffers_per_data_vc: ${BUFFERS_PER_DATA_VC}
 injection_vnet: 2 (forced by deadlock_ring)
 injection_rate: 1.0 (forced by deadlock_ring)
 packets_per_participating_source: ${VCS_PER_VNET}
@@ -106,6 +108,7 @@ echo "Results will be stored in ${RESULT_DIR}"
     --routing-algorithm="${ROUTING_ALGORITHM}" \
     --synthetic="${SYNTHETIC}" \
     --vcs-per-vnet="${VCS_PER_VNET}" \
+    --buffers-per-data-vc="${BUFFERS_PER_DATA_VC}" \
     --sim-cycles="${SIM_CYCLES}" \
     --interposer-stall-threshold="${STALL_THRESHOLD}" \
     --garnet-deadlock-threshold="${GARNET_DEADLOCK_THRESHOLD}" \
