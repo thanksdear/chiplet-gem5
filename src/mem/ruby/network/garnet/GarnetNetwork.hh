@@ -107,6 +107,8 @@ class GarnetNetwork : public Network
     { return m_interposer_stall_threshold; }
     bool isDeadlockTestEnabled() const
     { return m_deadlock_test_enabled; }
+    uint32_t getDeadlockTestRings() const
+    { return m_deadlock_test_rings; }
     Tick getDeadlockTestFormationTick() const
     { return m_deadlock_test_formation_tick; }
     Tick getDeadlockTestDetectionTick() const
@@ -292,6 +294,7 @@ class GarnetNetwork : public Network
     std::vector<int> m_lbdr_gateway_map;
     uint32_t m_interposer_stall_threshold;
     bool m_deadlock_test_enabled;
+    uint32_t m_deadlock_test_rings;
     uint32_t m_escape_buffer_depth;
     uint32_t m_deadlock_test_vcs;
     uint32_t m_health_score_bits;

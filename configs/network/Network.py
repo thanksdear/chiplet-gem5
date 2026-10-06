@@ -107,6 +107,9 @@ def define_options(parser):
         "--deadlock-test", action="store_true", default=False,
         help="enable the deterministic UHAF VC-cycle validation hooks")
     parser.add_argument(
+        "--deadlock-test-rings", action="store", type=int, default=1,
+        help="number of simultaneous deterministic deadlock rings")
+    parser.add_argument(
         "--escape-buffer-depth", action="store", type=int, default=5,
         help="flit capacity of each UHAF escape buffer (default: 5)")
     parser.add_argument(
@@ -203,6 +206,11 @@ def init_network(options, network, InterfaceClass):
         network.garnet_deadlock_threshold = options.garnet_deadlock_threshold
         network.interposer_stall_threshold = options.interposer_stall_threshold
         network.deadlock_test_enabled = options.deadlock_test
+        if (options.deadlock_test_rings < 1 or
+                options.deadlock_test_rings > options.num_chiplets):
+            raise ValueError(
+                "--deadlock-test-rings must be in [1, --num-chiplets]")
+        network.deadlock_test_rings = options.deadlock_test_rings
         network.escape_buffer_depth = options.escape_buffer_depth
         network.health_score_bits = options.health_score_bits
         if options.health_propagation_cycles < 1:

@@ -44,19 +44,38 @@ build/Garnet_standalone/gem5.opt \
 ```
 
 The test automatically selects vnet 2, injection rate 1.0, six participating
-sources, and `vcs_per_vnet - 1` packets per source.  Only sources R0 through
-R5 participate in this workload.  In test mode the final vnet-2 VC is
-reserved for recovered packets; ordinary packets cannot allocate it.
+sources per ring, and `vcs_per_vnet - 1` packets per source.  The single-ring
+case uses R0 through R5; each additional ring uses the corresponding local
+R0-through-R5 positions of another chiplet.  In test mode the final vnet-2 VC
+is reserved for recovered packets; ordinary packets cannot allocate it.
 Each data VC must have at least five slots so a complete five-flit packet can
 be staged without leaving a tail flit in an upstream dependency resource.
 
+### Simultaneous independent rings
+
+The same local cross-layer ring can be instantiated on multiple chiplets at
+the same simulated time.  The default command above uses one ring.  Use the
+multi-ring wrapper for two or four simultaneous rings:
+
+```bash
+bash command/run_multi_deadlock_validation.sh 2
+bash command/run_multi_deadlock_validation.sh 4
+```
+
+Each ring has six participating sources and four blocked data VCs per source.
+Thus the 2-ring case injects 48 packets (240 flits), while the 4-ring case
+injects 96 packets (480 flits).  A single global formation barrier releases
+all staged heads together, but each ring has its own dependency-cycle record,
+detector, and escape-buffer recovery event.
+
 ## Evidence and pass criteria
 
+For `N` configured simultaneous rings,
 `m5out/deadlock_injection.log` must contain:
 
-- 24 `DEADLOCK STAGE` records (six channels with four VCs each);
+- `24*N` `DEADLOCK STAGE` records (six channels with four VCs per ring);
 - one `DEADLOCK BARRIER RELEASED` record;
-- the explicit `VC DEPENDENCY CYCLE` record.
+- `N` explicit `VC DEPENDENCY CYCLE` records.
 
 `m5out/deadlock.log` must contain:
 
@@ -66,6 +85,8 @@ be staged without leaving a tail flit in an upstream dependency resource.
 - `ESCAPE REINJECTED`;
 - `RECOVERED PACKET DELIVERED`;
 - `DEADLOCK FULL RECOVERY COMPLETE` and `recovery_latency_cycles`.
+- `ESCAPE BUFFER CONTENTION`, including the number of eligible blocked VCs,
+  the selected victim VC, and the deferred VC count.
 
 The escape buffer is single-ported in the timing model: absorption and local
 reinjection each transfer at most one flit per cycle.  Health scores become

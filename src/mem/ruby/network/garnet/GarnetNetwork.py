@@ -68,6 +68,8 @@ class GarnetNetwork(RubyNetwork):
                               "interposer VC stall cycles for early exit")
     deadlock_test_enabled = Param.Bool(False,
                               "enable deterministic UHAF VC-cycle test")
+    deadlock_test_rings = Param.UInt32(1,
+                              "number of simultaneous deterministic rings")
     escape_buffer_depth = Param.UInt32(5,
                               "flit capacity of a UHAF escape buffer")
     health_score_bits = Param.UInt32(3,

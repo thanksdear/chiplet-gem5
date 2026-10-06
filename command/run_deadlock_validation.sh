@@ -12,7 +12,8 @@ GEM5_BIN="./build/Garnet_standalone/gem5.opt"
 CONFIG="configs/example/garnet_synth_traffic.py"
 
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-RESULT_DIR="data/deadlock/deadlock_validation_${TIMESTAMP}"
+DEADLOCK_RINGS=${DEADLOCK_RINGS:-1}
+RESULT_DIR="data/deadlock/deadlock_${DEADLOCK_RINGS}ring_validation_${TIMESTAMP}"
 
 # ===== Reproducible simulation configuration =====
 TOPOLOGY="Chiplet2_5D"
@@ -40,6 +41,11 @@ UP_HEALTH_MONITOR=1
 HEALTH_ALPHA=0.5
 HEALTH_SEVERE_BIAS=1
 HEALTH_MODERATE_BIAS=2
+
+if (( DEADLOCK_RINGS < 1 || DEADLOCK_RINGS > NUM_CHIPLETS )); then
+    echo "ERROR: DEADLOCK_RINGS must be in [1, ${NUM_CHIPLETS}]." >&2
+    exit 2
+fi
 
 if [[ ! -f "${CONFIG}" || ! -d "src/mem/ruby/network/garnet" ]]; then
     echo "ERROR: run this script from the gem5 repository root." >&2
@@ -73,6 +79,7 @@ timestamp: ${TIMESTAMP}
 git_branch: ${GIT_BRANCH:-unknown}
 git_commit: ${GIT_COMMIT:-unknown}
 workload: deterministic (random seed not applicable)
+deadlock_scenario: ${DEADLOCK_RINGS} simultaneous independent ring(s)
 topology: ${TOPOLOGY}
 num_chiplets: ${NUM_CHIPLETS}
 chiplet_mesh: ${CHIPLET_MESH_ROWS}x${CHIPLET_MESH_COLS}
@@ -89,6 +96,7 @@ escape_buffer_bandwidth_flits_per_cycle: 1
 injection_vnet: 2 (forced by deadlock_ring)
 injection_rate: 1.0 (forced by deadlock_ring)
 packets_per_participating_source: ${BLOCKED_VCS_PER_VNET}
+participating_sources: $((DEADLOCK_RINGS * 6))
 sim_cycles: ${SIM_CYCLES}
 interposer_stall_threshold: ${STALL_THRESHOLD}
 garnet_deadlock_threshold: ${GARNET_DEADLOCK_THRESHOLD}
@@ -120,6 +128,7 @@ echo "Results will be stored in ${RESULT_DIR}"
     --sim-cycles="${SIM_CYCLES}" \
     --interposer-stall-threshold="${STALL_THRESHOLD}" \
     --garnet-deadlock-threshold="${GARNET_DEADLOCK_THRESHOLD}" \
+    --deadlock-test-rings="${DEADLOCK_RINGS}" \
     --escape-buffer-depth="${ESCAPE_BUFFER_DEPTH}" \
     --health-score-bits="${HEALTH_BITS}" \
     --health-propagation-cycles="${HEALTH_PROPAGATION_CYCLES}" \
@@ -191,7 +200,7 @@ read_first_log_value()
     fi
 }
 
-EXPECTED_STAGES=$((6 * BLOCKED_VCS_PER_VNET))
+EXPECTED_STAGES=$((DEADLOCK_RINGS * 6 * BLOCKED_VCS_PER_VNET))
 EXPECTED_PACKETS=${EXPECTED_STAGES}
 EXPECTED_FLITS=$((EXPECTED_PACKETS * PACKET_FLITS))
 STAGE_COUNT=$(count_record "DEADLOCK STAGE" m5out/deadlock_injection.log)
@@ -206,6 +215,10 @@ REINJECTED_COUNT=$(count_record "ESCAPE REINJECTED" m5out/deadlock.log)
 DELIVERED_COUNT=$(count_record "RECOVERED PACKET DELIVERED" m5out/deadlock.log)
 FULL_RECOVERY_COUNT=$(count_record \
     "DEADLOCK FULL RECOVERY COMPLETE" m5out/deadlock.log)
+CONTENTION_COUNT=$(count_record \
+    "ESCAPE BUFFER CONTENTION" m5out/deadlock.log)
+CONTENDING_VCS=$(read_first_log_value \
+    "contending_vcs" m5out/deadlock.log)
 DETECTION_LATENCY=$(read_first_log_value \
     "detection_latency_cycles" m5out/deadlock.log)
 DETECTION_PATH_HOPS=$(read_first_log_value \
@@ -229,18 +242,20 @@ VALIDATION_STATUS="FAIL"
 if (( GEM5_STATUS == 0 &&
       STAGE_COUNT == EXPECTED_STAGES &&
       BARRIER_COUNT == 1 &&
-      CYCLE_COUNT == 1 &&
-      DETECTED_COUNT >= 1 &&
-      LATENCY_COUNT >= 1 &&
+      CYCLE_COUNT == DEADLOCK_RINGS &&
+      DETECTED_COUNT == DEADLOCK_RINGS &&
+      LATENCY_COUNT == DEADLOCK_RINGS &&
       DETECTION_PATH_HOPS >= 1 &&
       DETECTION_LATENCY >= EXPECTED_MIN_DETECTION_LATENCY &&
       HEALTH_RECEIVED_COUNT >= 1 &&
-      ABSORB_START_COUNT >= 1 &&
-      ABSORB_COMPLETE_COUNT >= 1 &&
+      ABSORB_START_COUNT == DEADLOCK_RINGS &&
+      ABSORB_COMPLETE_COUNT == DEADLOCK_RINGS &&
       ABSORPTION_LATENCY >= PACKET_FLITS &&
-      REINJECTED_COUNT >= 1 &&
+      REINJECTED_COUNT == DEADLOCK_RINGS &&
       REINJECTION_LATENCY >= PACKET_FLITS &&
-      DELIVERED_COUNT >= 1 &&
+      DELIVERED_COUNT == DEADLOCK_RINGS &&
+      CONTENTION_COUNT == DEADLOCK_RINGS &&
+      CONTENDING_VCS >= 2 &&
       FULL_RECOVERY_COUNT == 1 &&
       PACKETS_INJECTED == EXPECTED_PACKETS &&
       PACKETS_RECEIVED == EXPECTED_PACKETS &&
@@ -252,6 +267,7 @@ fi
 cat > "${SUMMARY_FILE}" <<EOF
 UHAF deterministic deadlock validation: ${VALIDATION_STATUS}
 gem5_exit_status: ${GEM5_STATUS}
+simultaneous_deadlock_rings: ${DEADLOCK_RINGS}
 expected_deadlock_stages: ${EXPECTED_STAGES}
 expected_packets: ${EXPECTED_PACKETS}
 expected_flits: ${EXPECTED_FLITS}
@@ -271,6 +287,8 @@ escape_reinjected_count: ${REINJECTED_COUNT}
 first_reinjection_latency_cycles: ${REINJECTION_LATENCY}
 recovered_packet_delivered_count: ${DELIVERED_COUNT}
 full_recovery_complete_count: ${FULL_RECOVERY_COUNT}
+escape_buffer_contention_count: ${CONTENTION_COUNT}
+first_contending_vcs: ${CONTENDING_VCS}
 packets_injected: ${PACKETS_INJECTED}
 packets_received: ${PACKETS_RECEIVED}
 flits_injected: ${FLITS_INJECTED}
@@ -286,6 +304,9 @@ if [[ -f m5out/deadlock.log ]]; then
         echo "Recovery latency records:"
         grep -E "absorption_cycles=|reinjection_cycles=|recovery_latency_cycles=" \
             m5out/deadlock.log || true
+        echo
+        echo "Escape-buffer contention records:"
+        grep "ESCAPE BUFFER CONTENTION" m5out/deadlock.log || true
     } >> "${SUMMARY_FILE}"
 fi
 
