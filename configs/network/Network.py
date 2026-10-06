@@ -110,6 +110,13 @@ def define_options(parser):
         "--deadlock-test-rings", action="store", type=int, default=1,
         help="number of simultaneous deterministic deadlock rings")
     parser.add_argument(
+        "--deadlock-partial-packet", action="store_true", default=False,
+        help="hold victim body/tail flits upstream during deadlock recovery")
+    parser.add_argument(
+        "--deadlock-partial-tail-delay", action="store", type=int,
+        default=520,
+        help="victim body/tail injection delay in cycles")
+    parser.add_argument(
         "--escape-buffer-depth", action="store", type=int, default=5,
         help="flit capacity of each UHAF escape buffer (default: 5)")
     parser.add_argument(
@@ -211,6 +218,11 @@ def init_network(options, network, InterfaceClass):
             raise ValueError(
                 "--deadlock-test-rings must be in [1, --num-chiplets]")
         network.deadlock_test_rings = options.deadlock_test_rings
+        if options.deadlock_partial_tail_delay < 1:
+            raise ValueError("--deadlock-partial-tail-delay must be >= 1")
+        network.deadlock_partial_packet = options.deadlock_partial_packet
+        network.deadlock_partial_tail_delay = \
+            options.deadlock_partial_tail_delay
         network.escape_buffer_depth = options.escape_buffer_depth
         network.health_score_bits = options.health_score_bits
         if options.health_propagation_cycles < 1:

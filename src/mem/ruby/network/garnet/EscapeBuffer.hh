@@ -114,6 +114,8 @@ class EscapeBuffer
     bool m_absorbing;    // still absorbing (waiting for tail)
     int m_source_vc;     // VC we absorbed from
     Tick m_absorb_time;  // tick when absorption started
+    int m_absorb_empty_wait_cycles;
+    bool m_partial_packet;
     int m_reinject_vc;   // VC we are re-injecting into (-1 if not yet)
     Tick m_reinject_time; // tick when escape-VC reinjection started
 

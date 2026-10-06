@@ -95,12 +95,17 @@ GarnetNetwork::GarnetNetwork(const Params &p)
     m_interposer_stall_threshold = p.interposer_stall_threshold;
     m_deadlock_test_enabled = p.deadlock_test_enabled;
     m_deadlock_test_rings = p.deadlock_test_rings;
+    m_deadlock_partial_packet = p.deadlock_partial_packet;
+    m_deadlock_partial_tail_delay = p.deadlock_partial_tail_delay;
     m_escape_buffer_depth = p.escape_buffer_depth;
     m_deadlock_test_vcs = p.vcs_per_vnet;
     if (m_deadlock_test_enabled) {
         fatal_if(m_deadlock_test_rings < 1 ||
                  m_deadlock_test_rings > m_num_chiplets,
                  "deadlock_test_rings must be in [1, num_chiplets]");
+        fatal_if(m_deadlock_partial_packet &&
+                 m_deadlock_partial_tail_delay < 1,
+                 "deadlock_partial_tail_delay must be positive");
         fatal_if(m_deadlock_test_vcs <= 1,
                  "deadlock_test requires at least one normal VC and one "
                  "reserved escape VC per vnet");

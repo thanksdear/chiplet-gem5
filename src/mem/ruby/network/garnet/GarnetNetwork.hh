@@ -109,6 +109,10 @@ class GarnetNetwork : public Network
     { return m_deadlock_test_enabled; }
     uint32_t getDeadlockTestRings() const
     { return m_deadlock_test_rings; }
+    bool isDeadlockPartialPacketTest() const
+    { return m_deadlock_partial_packet; }
+    uint32_t getDeadlockPartialTailDelay() const
+    { return m_deadlock_partial_tail_delay; }
     Tick getDeadlockTestFormationTick() const
     { return m_deadlock_test_formation_tick; }
     Tick getDeadlockTestDetectionTick() const
@@ -295,6 +299,8 @@ class GarnetNetwork : public Network
     uint32_t m_interposer_stall_threshold;
     bool m_deadlock_test_enabled;
     uint32_t m_deadlock_test_rings;
+    bool m_deadlock_partial_packet;
+    uint32_t m_deadlock_partial_tail_delay;
     uint32_t m_escape_buffer_depth;
     uint32_t m_deadlock_test_vcs;
     uint32_t m_health_score_bits;
