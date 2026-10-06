@@ -52,6 +52,8 @@ EscapeBuffer::EscapeBuffer(Router *router, int inport, int capacity)
       m_absorbing(false),
       m_source_vc(-1),
       m_absorb_time(0),
+      m_absorb_empty_wait_cycles(0),
+      m_partial_packet(false),
       m_reinject_vc(-1),
       m_reinject_time(0),
       m_absorb_count(0),
@@ -81,6 +83,9 @@ EscapeBuffer::startAbsorb(InputUnit *input_unit, int vc, Tick curTick)
 
     m_source_vc = vc;
     m_absorb_time = curTick;
+    m_absorb_empty_wait_cycles = 0;
+    const int initial_available = input_unit->getVcBufferSize(vc);
+    m_partial_packet = initial_available < head->get_size();
     m_occupied = true;
     m_absorbing = true;
     m_reinject_vc = -1;
@@ -96,7 +101,11 @@ EscapeBuffer::startAbsorb(InputUnit *input_unit, int vc, Tick curTick)
             << " Router " << m_router->get_id()
             << " inport=" << m_inport
             << " vc=" << vc
-            << " flits=0 complete=0 bandwidth_flits_per_cycle=1"
+            << " flits=0 complete=0"
+            << " initial_available_flits=" << initial_available
+            << " packet_flits=" << head->get_size()
+            << " partial_packet=" << m_partial_packet
+            << " bandwidth_flits_per_cycle=1"
             << std::endl;
     }
 
@@ -119,6 +128,7 @@ EscapeBuffer::continueAbsorb(InputUnit *input_unit, Tick curTick)
 
     // A single-ported escape buffer accepts at most one flit per cycle.
     if (input_unit->getVcBufferSize(vc) == 0) {
+        m_absorb_empty_wait_cycles++;
         m_router->schedule_wakeup(Cycles(1));
         return false;
     }
@@ -129,6 +139,14 @@ EscapeBuffer::continueAbsorb(InputUnit *input_unit, Tick curTick)
 
     flit *f = input_unit->getTopFlit(vc);
     m_buffer.push_back(f);
+    {
+        std::ofstream log("m5out/deadlock.log", std::ios::app);
+        log << "[ESCAPE ABSORB FLIT] tick=" << curTick
+            << " Router " << m_router->get_id()
+            << " vc=" << vc
+            << " flit_id=" << f->get_id()
+            << " buffered_flits=" << m_buffer.size() << std::endl;
+    }
     bool is_tail = (f->get_type() == TAIL_ ||
                     f->get_type() == HEAD_TAIL_);
     if (!f->is_escape_reinjected())
@@ -144,6 +162,8 @@ EscapeBuffer::continueAbsorb(InputUnit *input_unit, Tick curTick)
             << " flits=" << m_buffer.size()
             << " absorption_cycles="
             << (curTick - m_absorb_time) / m_router->clockPeriod()
+            << " empty_wait_cycles=" << m_absorb_empty_wait_cycles
+            << " partial_packet=" << m_partial_packet
             << std::endl;
 
         DPRINTF(RubyNetwork,

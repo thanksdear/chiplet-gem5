@@ -70,6 +70,10 @@ class GarnetNetwork(RubyNetwork):
                               "enable deterministic UHAF VC-cycle test")
     deadlock_test_rings = Param.UInt32(1,
                               "number of simultaneous deterministic rings")
+    deadlock_partial_packet = Param.Bool(False,
+                              "hold victim body/tail flits upstream")
+    deadlock_partial_tail_delay = Param.UInt32(520,
+                              "victim body/tail injection delay in cycles")
     escape_buffer_depth = Param.UInt32(5,
                               "flit capacity of a UHAF escape buffer")
     health_score_bits = Param.UInt32(3,

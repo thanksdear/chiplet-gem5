@@ -68,6 +68,27 @@ injects 96 packets (480 flits).  A single global formation barrier releases
 all staged heads together, but each ring has its own dependency-cycle record,
 detector, and escape-buffer recovery event.
 
+### Partial-packet recovery
+
+Run the dedicated scenario with:
+
+```bash
+bash command/run_partial_packet_validation.sh
+```
+
+The victim source releases each packet head normally but holds its four body
+and tail flits in the source NI until after the dependency cycle has formed
+and UHAF has detected it.  Thus the recovery input VC contains fewer than the
+five packet flits when absorption starts.  Returning the head credit allows
+the upstream body and tail to advance, and the single-ported escape buffer
+must wait for and absorb flit IDs 0 through 4 in order.
+
+The validation fails unless the injection log proves that all expected body
+and tail flits were held, the absorb-start record reports
+`initial_available_flits < packet_flits`, at least one empty absorb-wait cycle
+occurs, five ordered absorb-flit records are present, and every packet and
+flit is ultimately delivered.
+
 ## Evidence and pass criteria
 
 For `N` configured simultaneous rings,

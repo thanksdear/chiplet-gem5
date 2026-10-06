@@ -13,7 +13,13 @@ CONFIG="configs/example/garnet_synth_traffic.py"
 
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 DEADLOCK_RINGS=${DEADLOCK_RINGS:-1}
-RESULT_DIR="data/deadlock/deadlock_${DEADLOCK_RINGS}ring_validation_${TIMESTAMP}"
+DEADLOCK_PARTIAL_PACKET=${DEADLOCK_PARTIAL_PACKET:-0}
+PARTIAL_TAIL_DELAY_CYCLES=${PARTIAL_TAIL_DELAY_CYCLES:-520}
+SCENARIO_TAG="${DEADLOCK_RINGS}ring"
+if (( DEADLOCK_PARTIAL_PACKET == 1 )); then
+    SCENARIO_TAG="${SCENARIO_TAG}_partial_packet"
+fi
+RESULT_DIR="data/deadlock/deadlock_${SCENARIO_TAG}_validation_${TIMESTAMP}"
 
 # ===== Reproducible simulation configuration =====
 TOPOLOGY="Chiplet2_5D"
@@ -45,6 +51,19 @@ HEALTH_MODERATE_BIAS=2
 if (( DEADLOCK_RINGS < 1 || DEADLOCK_RINGS > NUM_CHIPLETS )); then
     echo "ERROR: DEADLOCK_RINGS must be in [1, ${NUM_CHIPLETS}]." >&2
     exit 2
+fi
+if (( DEADLOCK_PARTIAL_PACKET != 0 && DEADLOCK_PARTIAL_PACKET != 1 )); then
+    echo "ERROR: DEADLOCK_PARTIAL_PACKET must be 0 or 1." >&2
+    exit 2
+fi
+if (( PARTIAL_TAIL_DELAY_CYCLES < 1 )); then
+    echo "ERROR: PARTIAL_TAIL_DELAY_CYCLES must be positive." >&2
+    exit 2
+fi
+
+PARTIAL_PACKET_FLAG=()
+if (( DEADLOCK_PARTIAL_PACKET == 1 )); then
+    PARTIAL_PACKET_FLAG+=(--deadlock-partial-packet)
 fi
 
 if [[ ! -f "${CONFIG}" || ! -d "src/mem/ruby/network/garnet" ]]; then
@@ -80,6 +99,8 @@ git_branch: ${GIT_BRANCH:-unknown}
 git_commit: ${GIT_COMMIT:-unknown}
 workload: deterministic (random seed not applicable)
 deadlock_scenario: ${DEADLOCK_RINGS} simultaneous independent ring(s)
+partial_packet_recovery: ${DEADLOCK_PARTIAL_PACKET}
+partial_tail_delay_cycles: ${PARTIAL_TAIL_DELAY_CYCLES}
 topology: ${TOPOLOGY}
 num_chiplets: ${NUM_CHIPLETS}
 chiplet_mesh: ${CHIPLET_MESH_ROWS}x${CHIPLET_MESH_COLS}
@@ -129,6 +150,8 @@ echo "Results will be stored in ${RESULT_DIR}"
     --interposer-stall-threshold="${STALL_THRESHOLD}" \
     --garnet-deadlock-threshold="${GARNET_DEADLOCK_THRESHOLD}" \
     --deadlock-test-rings="${DEADLOCK_RINGS}" \
+    --deadlock-partial-tail-delay="${PARTIAL_TAIL_DELAY_CYCLES}" \
+    "${PARTIAL_PACKET_FLAG[@]}" \
     --escape-buffer-depth="${ESCAPE_BUFFER_DEPTH}" \
     --health-score-bits="${HEALTH_BITS}" \
     --health-propagation-cycles="${HEALTH_PROPAGATION_CYCLES}" \
@@ -200,6 +223,28 @@ read_first_log_value()
     fi
 }
 
+read_first_record_value()
+{
+    local pattern=$1
+    local key=$2
+    local file=$3
+
+    if [[ -f "${file}" ]]; then
+        awk -v pattern="${pattern}" -v key="${key}" '
+            $0 ~ pattern && index($0, key "=") {
+                value = substr($0, index($0, key "=") + length(key) + 1)
+                sub(/[^0-9].*$/, "", value)
+                print value
+                found = 1
+                exit
+            }
+            END { if (!found) print 0 }
+        ' "${file}"
+    else
+        echo 0
+    fi
+}
+
 EXPECTED_STAGES=$((DEADLOCK_RINGS * 6 * BLOCKED_VCS_PER_VNET))
 EXPECTED_PACKETS=${EXPECTED_STAGES}
 EXPECTED_FLITS=$((EXPECTED_PACKETS * PACKET_FLITS))
@@ -219,6 +264,21 @@ CONTENTION_COUNT=$(count_record \
     "ESCAPE BUFFER CONTENTION" m5out/deadlock.log)
 CONTENDING_VCS=$(read_first_log_value \
     "contending_vcs" m5out/deadlock.log)
+PARTIAL_HELD_COUNT=$(count_record \
+    "PARTIAL PACKET FLIT HELD" m5out/deadlock_injection.log)
+PARTIAL_START_COUNT=$(count_record \
+    "ESCAPE ABSORB START.*partial_packet=1" m5out/deadlock.log)
+ABSORB_FLIT_COUNT=$(count_record \
+    "ESCAPE ABSORB FLIT" m5out/deadlock.log)
+INITIAL_AVAILABLE_FLITS=$(read_first_log_value \
+    "initial_available_flits" m5out/deadlock.log)
+EMPTY_WAIT_CYCLES=$(read_first_log_value \
+    "empty_wait_cycles" m5out/deadlock.log)
+FIRST_HELD_RELEASE_TICK=$(read_first_record_value \
+    "PARTIAL PACKET FLIT HELD" "release_tick" \
+    m5out/deadlock_injection.log)
+FIRST_ABSORB_START_TICK=$(read_first_record_value \
+    "ESCAPE ABSORB START" "tick" m5out/deadlock.log)
 DETECTION_LATENCY=$(read_first_log_value \
     "detection_latency_cycles" m5out/deadlock.log)
 DETECTION_PATH_HOPS=$(read_first_log_value \
@@ -238,6 +298,22 @@ FLITS_INJECTED=$(read_stat \
 FLITS_RECEIVED=$(read_stat \
     "system.ruby.network.flits_received::total" m5out/stats.txt)
 
+EXPECTED_HELD_FLITS=0
+if (( DEADLOCK_PARTIAL_PACKET == 1 )); then
+    EXPECTED_HELD_FLITS=$((DEADLOCK_RINGS * BLOCKED_VCS_PER_VNET * \
+        (PACKET_FLITS - 1)))
+fi
+PARTIAL_VALID=1
+if (( DEADLOCK_PARTIAL_PACKET == 1 &&
+      (PARTIAL_HELD_COUNT != EXPECTED_HELD_FLITS ||
+       PARTIAL_START_COUNT != DEADLOCK_RINGS ||
+       ABSORB_FLIT_COUNT != DEADLOCK_RINGS * PACKET_FLITS ||
+       INITIAL_AVAILABLE_FLITS >= PACKET_FLITS ||
+       FIRST_HELD_RELEASE_TICK <= FIRST_ABSORB_START_TICK ||
+       EMPTY_WAIT_CYCLES < 1) )); then
+    PARTIAL_VALID=0
+fi
+
 VALIDATION_STATUS="FAIL"
 if (( GEM5_STATUS == 0 &&
       STAGE_COUNT == EXPECTED_STAGES &&
@@ -256,6 +332,7 @@ if (( GEM5_STATUS == 0 &&
       DELIVERED_COUNT == DEADLOCK_RINGS &&
       CONTENTION_COUNT == DEADLOCK_RINGS &&
       CONTENDING_VCS >= 2 &&
+      PARTIAL_VALID == 1 &&
       FULL_RECOVERY_COUNT == 1 &&
       PACKETS_INJECTED == EXPECTED_PACKETS &&
       PACKETS_RECEIVED == EXPECTED_PACKETS &&
@@ -268,6 +345,7 @@ cat > "${SUMMARY_FILE}" <<EOF
 UHAF deterministic deadlock validation: ${VALIDATION_STATUS}
 gem5_exit_status: ${GEM5_STATUS}
 simultaneous_deadlock_rings: ${DEADLOCK_RINGS}
+partial_packet_recovery: ${DEADLOCK_PARTIAL_PACKET}
 expected_deadlock_stages: ${EXPECTED_STAGES}
 expected_packets: ${EXPECTED_PACKETS}
 expected_flits: ${EXPECTED_FLITS}
@@ -289,6 +367,15 @@ recovered_packet_delivered_count: ${DELIVERED_COUNT}
 full_recovery_complete_count: ${FULL_RECOVERY_COUNT}
 escape_buffer_contention_count: ${CONTENTION_COUNT}
 first_contending_vcs: ${CONTENDING_VCS}
+expected_held_body_tail_flits: ${EXPECTED_HELD_FLITS}
+held_body_tail_flit_count: ${PARTIAL_HELD_COUNT}
+partial_absorb_start_count: ${PARTIAL_START_COUNT}
+absorbed_flit_record_count: ${ABSORB_FLIT_COUNT}
+initial_available_flits: ${INITIAL_AVAILABLE_FLITS}
+first_held_release_tick: ${FIRST_HELD_RELEASE_TICK}
+first_absorb_start_tick: ${FIRST_ABSORB_START_TICK}
+absorb_empty_wait_cycles: ${EMPTY_WAIT_CYCLES}
+partial_packet_validation: ${PARTIAL_VALID}
 packets_injected: ${PACKETS_INJECTED}
 packets_received: ${PACKETS_RECEIVED}
 flits_injected: ${FLITS_INJECTED}
@@ -307,6 +394,12 @@ if [[ -f m5out/deadlock.log ]]; then
         echo
         echo "Escape-buffer contention records:"
         grep "ESCAPE BUFFER CONTENTION" m5out/deadlock.log || true
+        if (( DEADLOCK_PARTIAL_PACKET == 1 )); then
+            echo
+            echo "Partial-packet recovery records:"
+            grep -E "ESCAPE ABSORB START|ESCAPE ABSORB FLIT|ESCAPE ABSORB COMPLETE" \
+                m5out/deadlock.log || true
+        fi
     } >> "${SUMMARY_FILE}"
 fi
 

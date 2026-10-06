@@ -90,6 +90,10 @@ Ruby.define_options(parser)
 
 args = parser.parse_args()
 
+if args.deadlock_partial_packet and args.synthetic != "deadlock_ring":
+    parser.error("--deadlock-partial-packet requires "
+                 "--synthetic=deadlock_ring")
+
 # Deterministic, opt-in validation workload.  Six staged flows form a
 # cross-layer VC dependency cycle; ordinary traffic modes never enable the
 # corresponding routing and allocator hooks.

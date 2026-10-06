@@ -501,6 +501,26 @@ NetworkInterface::flitisizeMessage(MsgPtr msg_ptr, int vnet)
             fl->set_inter_chiplet(
                 route.dest_router < num_chiplet_routers &&
                 src_chip != dst_chip);
+
+            // Partial-packet validation: only the victim source's head is
+            // initially released.  Its body and tail remain in the source
+            // NI until after deadlock detection, so recovery must return
+            // credits and wait for the rest of the packet to arrive.
+            if (m_net_ptr->isDeadlockPartialPacketTest() &&
+                vnet == 2 && route.src_router % 16 == 0 && i > 0) {
+                const Tick release_tick = clockEdge(Cycles(
+                    m_net_ptr->getDeadlockPartialTailDelay()));
+                fl->set_time(release_tick);
+                scheduleEventAbsolute(release_tick);
+
+                std::ofstream log("m5out/deadlock_injection.log",
+                                  std::ios::app);
+                log << "[PARTIAL PACKET FLIT HELD] tick=" << curTick()
+                    << " source=R" << route.src_router
+                    << " vc=" << vc
+                    << " flit_id=" << i
+                    << " release_tick=" << release_tick << std::endl;
+            }
             niOutVcs[vc].insert(fl);
         }
 
