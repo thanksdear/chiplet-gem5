@@ -100,6 +100,10 @@ if args.synthetic == "deadlock_ring":
         parser.error("deadlock_ring requires --routing-algorithm=4 (UHAF)")
     if args.num_chiplets < 1 or args.num_cpus < 16:
         parser.error("deadlock_ring requires at least one 4x4 chiplet")
+    if (args.deadlock_test_rings < 1 or
+            args.deadlock_test_rings > args.num_chiplets):
+        parser.error("deadlock_ring requires --deadlock-test-rings in "
+                     "[1, --num-chiplets]")
     if args.buffers_per_data_vc < 5:
         parser.error("deadlock_ring requires --buffers-per-data-vc >= 5 "
                      "to stage each complete five-flit packet")
@@ -131,6 +135,7 @@ cpus = [ GarnetSyntheticTraffic(
                      precision=args.precision,
                      num_dest=args.num_dirs,
                      num_chiplets=args.num_chiplets,
+                     deadlock_rings=args.deadlock_test_rings,
                      traffic_rows=traffic_rows,
                      traffic_cols=traffic_cols) \
          for i in range(args.num_cpus) ]

@@ -231,60 +231,87 @@ int
 RoutingUnit::outportComputeDeadlockTest(RouteInfo route,
                                         PortDirection inport_dirn)
 {
-    if (route.vnet != 2 || route.src_router < 0 || route.src_router > 5)
+    if (route.vnet != 2 || route.src_router < 0)
         return -1;
 
+    const int source_chiplet = route.src_router / 16;
+    const int local_source = route.src_router % 16;
+    if (source_chiplet >= static_cast<int>(
+            m_router->get_net_ptr()->getDeadlockTestRings()) ||
+        local_source > 5) {
+        return -1;
+    }
+
     const int router = m_router->get_id();
+    const int router_base = source_chiplet * 16;
     const int first_ir = static_cast<int>(
-        m_router->get_net_ptr()->getFirstInterposerRouterId());
+        m_router->get_net_ptr()->getFirstInterposerRouterId()) +
+        source_chiplet * 4;
     PortDirection direction = "Unknown";
 
-    switch (route.src_router) {
+    switch (local_source) {
       case 0:
-        if (router == 0 && inport_dirn == "Local") direction = "Down";
+        if (router == router_base && inport_dirn == "Local")
+            direction = "Down";
         else if (router == first_ir && inport_dirn == "Up")
             direction = "East";
         else if (router == first_ir + 1 && inport_dirn == "West")
             direction = "Up";
         break;
       case 1:
-        if (router == 1 && inport_dirn == "Local") direction = "West";
-        else if (router == 0 && inport_dirn == "East") direction = "Down";
+        if (router == router_base + 1 && inport_dirn == "Local")
+            direction = "West";
+        else if (router == router_base && inport_dirn == "East")
+            direction = "Down";
         else if (router == first_ir && inport_dirn == "Up")
             direction = "East";
         else if (router == first_ir + 1 && inport_dirn == "West")
             direction = "Up";
         break;
       case 2:
-        if (router == 2 && inport_dirn == "Local") direction = "East";
-        else if (router == 3 && inport_dirn == "West") direction = "Down";
+        if (router == router_base + 2 && inport_dirn == "Local")
+            direction = "East";
+        else if (router == router_base + 3 && inport_dirn == "West")
+            direction = "Down";
         else if (router == first_ir + 1 && inport_dirn == "Up")
             direction = "Up";
-        else if (router == 3 && inport_dirn == "Down") direction = "West";
-        else if ((router == 1 || router == 2) && inport_dirn == "East")
+        else if (router == router_base + 3 && inport_dirn == "Down")
+            direction = "West";
+        else if ((router == router_base + 1 ||
+                  router == router_base + 2) && inport_dirn == "East")
             direction = "West";
         break;
       case 3:
-        if ((router == 1 || router == 2) && inport_dirn == "East") {
+        if ((router == router_base + 1 || router == router_base + 2) &&
+            inport_dirn == "East") {
             direction = "West";
-        } else if (router == 3 && inport_dirn == "Local") {
+        } else if (router == router_base + 3 &&
+                   inport_dirn == "Local") {
             direction = "West";
         }
         break;
       case 4:
-        if ((router == 4 || router == 5) &&
-            inport_dirn == (router == 4 ? "Local" : "West"))
+        if ((router == router_base + 4 || router == router_base + 5) &&
+            inport_dirn ==
+                (router == router_base + 4 ? "Local" : "West"))
             direction = "East";
-        else if (router == 6 && inport_dirn == "West") direction = "North";
-        else if (router == 2 && inport_dirn == "South") direction = "West";
-        else if (router == 1 && inport_dirn == "East") direction = "West";
+        else if (router == router_base + 6 && inport_dirn == "West")
+            direction = "North";
+        else if (router == router_base + 2 && inport_dirn == "South")
+            direction = "West";
+        else if (router == router_base + 1 && inport_dirn == "East")
+            direction = "West";
         break;
       case 5:
-        if (router == 5 && inport_dirn == "Local") direction = "North";
-        else if (router == 1 && inport_dirn == "South") direction = "West";
-        else if (router == 0 && inport_dirn == "East") direction = "Down";
+        if (router == router_base + 5 && inport_dirn == "Local")
+            direction = "North";
+        else if (router == router_base + 1 && inport_dirn == "South")
+            direction = "West";
+        else if (router == router_base && inport_dirn == "East")
+            direction = "Down";
         else if (router == first_ir && inport_dirn == "Up") direction = "Up";
-        else if (router == 0 && inport_dirn == "Down") direction = "South";
+        else if (router == router_base && inport_dirn == "Down")
+            direction = "South";
         break;
       default:
         break;

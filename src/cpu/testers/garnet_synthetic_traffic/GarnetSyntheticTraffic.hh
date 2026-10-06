@@ -29,6 +29,7 @@
 #ifndef __CPU_GARNET_SYNTHETIC_TRAFFIC_HH__
 #define __CPU_GARNET_SYNTHETIC_TRAFFIC_HH__
 
+#include <cstdint>
 #include <set>
 
 #include "base/statistics.hh"
@@ -124,6 +125,7 @@ class GarnetSyntheticTraffic : public ClockedObject
 
     int numDestinations;
     int numChiplets;
+    uint32_t deadlockRings;
     int trafficRows;
     int trafficCols;
     Tick simCycles;

@@ -542,6 +542,7 @@ Router::wakeup()
                 // Find the most stalled VC with a head flit
                 int worst_vc = -1;
                 Tick worst_stall = 0;
+                int contending_vcs = 0;
                 for (int v = 0; v < num_vcs; v++) {
                     if (iu->get_vc_state(v) != ACTIVE_)
                         continue;
@@ -551,6 +552,7 @@ Router::wakeup()
                     if (top->get_type() != HEAD_ &&
                         top->get_type() != HEAD_TAIL_)
                         continue;
+                    contending_vcs++;
                     Tick stall = iu->getVcStallCycles(v);
                     if (stall > worst_stall) {
                         worst_stall = stall;
@@ -559,6 +561,15 @@ Router::wakeup()
                 }
 
                 if (worst_vc >= 0) {
+                    if (contending_vcs > 1) {
+                        logf << "[ESCAPE BUFFER CONTENTION] tick="
+                             << curTick() << " Router " << m_id
+                             << " inport=" << inport
+                             << " contending_vcs=" << contending_vcs
+                             << " selected_vc=" << worst_vc
+                             << " deferred_vcs=" << contending_vcs - 1
+                             << std::endl;
+                    }
                     esc->startAbsorb(iu, worst_vc, curTick());
                     logf << "  Absorbed vc " << worst_vc
                          << " from inport " << inport
