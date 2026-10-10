@@ -30,6 +30,7 @@ import m5
 from m5.objects import *
 from m5.defines import buildEnv
 from m5.util import addToPath
+from _m5.core import seedRandom
 import os, argparse, sys
 
 addToPath('../')
@@ -65,6 +66,10 @@ parser.add_argument("--precision", type=int, default=3,
 parser.add_argument("--sim-cycles", type=int, default=1000,
                     help="Number of simulation cycles")
 
+parser.add_argument("--random-seed", type=int, default=5489,
+                    help="Global random seed used by synthetic traffic "
+                         "(default: 5489)")
+
 parser.add_argument("--num-packets-max", type=int, default=-1,
                     help="Stop injecting after --num-packets-max.\
                         Set to -1 to disable.")
@@ -89,6 +94,11 @@ parser.add_argument("--inj-vnet", type=int, default=-1,
 Ruby.define_options(parser)
 
 args = parser.parse_args()
+
+if args.random_seed < 0:
+    parser.error("--random-seed must be non-negative")
+seedRandom(args.random_seed)
+print("Using random seed:", args.random_seed)
 
 if args.deadlock_partial_packet and args.synthetic != "deadlock_ring":
     parser.error("--deadlock-partial-packet requires "
