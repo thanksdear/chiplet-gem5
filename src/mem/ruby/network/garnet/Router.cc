@@ -460,8 +460,14 @@ Router::wakeup()
         // the cycle.  Those formation stalls are not a deadlock and must not
         // trigger recovery.  Arm recovery only after the complete cycle has
         // remained in place for one full detection threshold.
-        bool recovery_allowed = true;
-        if (m_network_ptr->isDeadlockTestEnabled()) {
+        // Escape-buffer recovery currently relies on the final VC being
+        // reserved exclusively for reinjection.  That reservation is enabled
+        // by the deterministic deadlock-test configuration, whereas normal
+        // latency/throughput runs allow regular packets to use every VC.
+        // Therefore keep health monitoring and adaptive routing active in
+        // normal runs, but arm destructive recovery only in validation mode.
+        bool recovery_allowed = m_network_ptr->isDeadlockTestEnabled();
+        if (recovery_allowed) {
             const Tick formed =
                 m_network_ptr->getDeadlockTestFormationTick();
             const Tick validation_delay =
