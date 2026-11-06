@@ -155,6 +155,8 @@ EscapeBuffer::continueAbsorb(InputUnit *input_unit, Tick curTick)
     if (is_tail) {
         m_absorbing = false;
         input_unit->set_vc_idle(vc, curTick);
+        m_router->get_net_ptr()->recordDeadlockTestCycleBreak(
+            m_router->get_id(), curTick);
 
         std::ofstream log("m5out/deadlock.log", std::ios::app);
         log << "[ESCAPE ABSORB COMPLETE] tick=" << curTick

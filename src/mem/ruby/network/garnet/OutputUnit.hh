@@ -137,6 +137,10 @@ class OutputUnit : public Consumer
 
     // Check if health monitor is initialized
     bool hasHealthMonitor() const;
+    void resetHealthObservation(Tick tick) {
+        for (auto &monitor : m_vc_health_monitors)
+            monitor->resetObservation(tick);
+    }
 
     // Sample health score into histogram (call once per cycle)
     void sampleHealthScore(Tick current_tick);

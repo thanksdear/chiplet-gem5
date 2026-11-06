@@ -94,6 +94,8 @@ class flit
     { m_escape_reinjected = value; }
     bool is_recovery() const { return m_recovery; }
     void set_recovery(bool value) { m_recovery = value; }
+    int get_validation_packet() const { return m_validation_packet; }
+    void set_validation_packet(int id) { m_validation_packet = id; }
 
     void increment_hops() { m_route.hops_traversed++; }
     virtual void print(std::ostream& out) const;
@@ -150,6 +152,8 @@ class flit
     bool m_escape_reinjected = false;
     // Persistent marker used to validate delivery of recovered packets.
     bool m_recovery = false;
+    // Simulator-only identity; never changes routing or packet contents.
+    int m_validation_packet = -1;
 };
 
 inline std::ostream&

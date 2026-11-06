@@ -181,7 +181,7 @@ Router::init()
 
     // Create escape buffers for "Up" input ports (chiplet → interposer).
     // Chiplet2_5D names the receiver side of the downward TSV "Up".
-    if (m_is_interposer) {
+    if (m_is_interposer && m_network_ptr->usesUhafEscapeRecovery()) {
         int buf_depth = m_network_ptr->getEscapeBufferDepth();
         for (int i = 0; i < (int)m_input_unit.size(); i++) {
             if (m_input_unit[i]->get_direction() == "Up") {
@@ -213,7 +213,7 @@ Router::wakeup()
     }
 
     // Escape buffer: continue absorb / re-inject (before SA)
-    if (m_is_interposer)
+    if (m_is_interposer && m_network_ptr->usesUhafEscapeRecovery())
         escapeBufferTick();
 
     // check for incoming credits
@@ -225,6 +225,9 @@ Router::wakeup()
     for (int outport = 0; outport < m_output_unit.size(); outport++) {
         m_output_unit[outport]->wakeup();
     }
+
+    if (m_is_interposer)
+        m_network_ptr->observeDeadlockTest();
 
     // Switch Allocation
     switchAllocator.wakeup();
@@ -457,22 +460,18 @@ Router::wakeup()
         }
 
         // The deterministic test deliberately holds heads while assembling
-        // the cycle.  Those formation stalls are not a deadlock and must not
-        // trigger recovery.  Arm recovery only after the complete cycle has
-        // remained in place for one full detection threshold.
-        bool recovery_allowed = true;
+        // the cycle. Those staging stalls must not trigger recovery.
+        // At barrier release, armDeadlockTest() resets observation history;
+        // the actual monitors then determine latency, without a test delay.
+        bool recovery_allowed = m_network_ptr->usesUhafEscapeRecovery();
         if (m_network_ptr->isDeadlockTestEnabled()) {
             const Tick formed =
                 m_network_ptr->getDeadlockTestFormationTick();
-            const Tick validation_delay =
-                m_network_ptr->getInterposerStallThreshold()
-                * clockPeriod();
-            recovery_allowed = formed > 0 &&
-                curTick() >= formed + validation_delay;
+            recovery_allowed = recovery_allowed && formed > 0;
         }
 
         if (recovery_allowed && peer_dead && m_up_input_stall) {
-            m_network_ptr->recordDeadlockTestDetection(curTick());
+            m_network_ptr->recordDeadlockTestDetection(m_id, curTick());
             // --- Log deadlock detection (preserved) ---
             std::ofstream logf("m5out/deadlock.log", std::ios::app);
             logf << "[DEADLOCK DETECTED] tick=" << curTick()
@@ -533,6 +532,8 @@ Router::wakeup()
                  << " Router " << m_id << std::endl;
 
             for (auto &[inport, esc] : m_escape_buffers) {
+                if (m_network_ptr->isDeadlockTestRecoveryDisabled())
+                    continue;
                 if (esc->isOccupied())
                     continue;
 
@@ -551,6 +552,8 @@ Router::wakeup()
                     flit *top = iu->peekTopFlit(v);
                     if (top->get_type() != HEAD_ &&
                         top->get_type() != HEAD_TAIL_)
+                        continue;
+                    if (iu->get_outvc(v) != -1)
                         continue;
                     contending_vcs++;
                     Tick stall = iu->getVcStallCycles(v);
@@ -571,6 +574,7 @@ Router::wakeup()
                              << std::endl;
                     }
                     esc->startAbsorb(iu, worst_vc, curTick());
+                    m_network_ptr->recordUhafEscapeAbsorption();
                     logf << "  Absorbed vc " << worst_vc
                          << " from inport " << inport
                          << " (stall=" << worst_stall << ")"
@@ -1011,11 +1015,7 @@ Router::applyPendingHealthScores()
 
         bool valid = true;
         if (m_network_ptr->isDeadlockTestEnabled() && formed > 0) {
-            const Tick valid_zero_time = formed +
-                m_network_ptr->getInterposerStallThreshold()
-                * clockPeriod();
-            if (it->sent_tick < formed ||
-                (it->score == 0 && it->sent_tick < valid_zero_time)) {
+            if (it->sent_tick < formed) {
                 valid = false;
             }
         }

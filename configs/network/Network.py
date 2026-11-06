@@ -77,6 +77,10 @@ def define_options(parser):
             3: Chiplet XY, 4: Adaptive, 5: MTR, 6: RC, 7: IPDR
             8: LBDR-lite static load-balanced binding""")
     parser.add_argument(
+        "--ipdr-har", action="store_true", default=False,
+        help="add HAR adaptive uplink selection to IPDR (algorithm 7); "
+             "retain IPDR arbitration and recovery")
+    parser.add_argument(
         "--lbdr-gateway-map", action="store", type=str,
         default="0,0,1,1,0,0,1,1,2,2,3,3,2,2,3,3",
         help="comma-separated gateway indices for local routers 0-15; "
@@ -112,6 +116,9 @@ def define_options(parser):
     parser.add_argument(
         "--deadlock-partial-packet", action="store_true", default=False,
         help="hold victim body/tail flits upstream during deadlock recovery")
+    parser.add_argument(
+        "--deadlock-test-disable-recovery", action="store_true", default=False,
+        help="negative control for deadlock_ring: detect without recovery")
     parser.add_argument(
         "--deadlock-partial-tail-delay", action="store", type=int,
         default=520,
@@ -187,6 +194,11 @@ def init_network(options, network, InterfaceClass):
         network.buffers_per_data_vc = options.buffers_per_data_vc
         network.ni_flit_size = options.link_width_bits / 8
         network.routing_algorithm = options.routing_algorithm
+        if options.ipdr_har and options.routing_algorithm != 7:
+            raise ValueError("--ipdr-har requires --routing-algorithm=7")
+        if options.ipdr_har and not options.up_health_monitor:
+            raise ValueError("--ipdr-har requires --up-health-monitor=1")
+        network.ipdr_har_enabled = options.ipdr_har
         if options.num_chiplets <= 0:
             raise ValueError("--num-chiplets must be positive")
         if (options.chiplet_mesh_rows <= 0 or
@@ -218,6 +230,12 @@ def init_network(options, network, InterfaceClass):
             raise ValueError(
                 "--deadlock-test-rings must be in [1, --num-chiplets]")
         network.deadlock_test_rings = options.deadlock_test_rings
+        if (options.deadlock_test_disable_recovery and
+                not options.deadlock_test):
+            raise ValueError("--deadlock-test-disable-recovery "
+                             "requires deadlock_ring")
+        network.deadlock_test_disable_recovery = \
+            options.deadlock_test_disable_recovery
         if options.deadlock_partial_tail_delay < 1:
             raise ValueError("--deadlock-partial-tail-delay must be >= 1")
         network.deadlock_partial_packet = options.deadlock_partial_packet

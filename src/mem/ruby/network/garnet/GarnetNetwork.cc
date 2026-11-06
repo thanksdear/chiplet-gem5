@@ -47,6 +47,7 @@
 #include "mem/ruby/network/garnet/NetworkLink.hh"
 #include "mem/ruby/network/garnet/Router.hh"
 #include "mem/ruby/system/RubySystem.hh"
+#include "sim/sim_exit.hh"
 
 namespace gem5
 {
@@ -72,6 +73,11 @@ GarnetNetwork::GarnetNetwork(const Params &p)
     m_buffers_per_data_vc = p.buffers_per_data_vc;
     m_buffers_per_ctrl_vc = p.buffers_per_ctrl_vc;
     m_routing_algorithm = p.routing_algorithm;
+    m_ipdr_har_enabled = p.ipdr_har_enabled;
+    fatal_if(m_ipdr_har_enabled && m_routing_algorithm != IPDR_,
+             "ipdr_har_enabled requires IPDR routing algorithm 7");
+    fatal_if(m_ipdr_har_enabled && !p.up_health_monitor_enabled,
+             "IPDR+HAR requires Up-port health monitoring");
     m_num_chiplets = p.num_chiplets;
     m_chiplet_mesh_rows = p.chiplet_mesh_rows;
     m_chiplet_mesh_cols = p.chiplet_mesh_cols;
@@ -94,6 +100,7 @@ GarnetNetwork::GarnetNetwork(const Params &p)
     }
     m_interposer_stall_threshold = p.interposer_stall_threshold;
     m_deadlock_test_enabled = p.deadlock_test_enabled;
+    m_deadlock_test_disable_recovery = p.deadlock_test_disable_recovery;
     m_deadlock_test_rings = p.deadlock_test_rings;
     m_deadlock_partial_packet = p.deadlock_partial_packet;
     m_deadlock_partial_tail_delay = p.deadlock_partial_tail_delay;
@@ -110,6 +117,8 @@ GarnetNetwork::GarnetNetwork(const Params &p)
                  "deadlock_test requires at least one normal VC and one "
                  "reserved escape VC per vnet");
         m_deadlock_test_vcs--;
+        m_validation_rings.resize(m_deadlock_test_rings);
+        registerExitCallback([this]() { writeDeadlockTestSummary(); });
     }
     m_health_score_bits = p.health_score_bits;
     m_health_monitor_broadcast_interval = p.health_monitor_broadcast_interval;
@@ -292,6 +301,8 @@ GarnetNetwork::holdDeadlockTestHead(int source_router, int router_id,
     if (m_deadlock_test_staged_vcs.size() == expected_stages) {
         m_deadlock_test_barrier_released = true;
         m_deadlock_test_formation_tick = curTick();
+        for (auto *router : m_routers)
+            router->armDeadlockTest();
 
         std::ofstream log("m5out/deadlock_injection.log", std::ios::app);
         log << "[DEADLOCK BARRIER RELEASED] tick=" << curTick()
@@ -311,35 +322,6 @@ GarnetNetwork::holdDeadlockTestHead(int source_router, int router_id,
     // Hold the last arriving head for this cycle as well.  Starting with the
     // next allocator cycle, no artificial blocking remains.
     return true;
-}
-
-void
-GarnetNetwork::recordDeadlockTestDetection(Tick tick)
-{
-    if (m_deadlock_test_enabled && m_deadlock_test_detection_tick == 0)
-        m_deadlock_test_detection_tick = tick;
-}
-
-void
-GarnetNetwork::recordDeadlockTestPacketDelivery(Tick tick,
-                                                Tick clock_period)
-{
-    if (!m_deadlock_test_enabled)
-        return;
-
-    m_deadlock_test_packets_delivered++;
-    const uint32_t expected =
-        6 * m_deadlock_test_vcs * m_deadlock_test_rings;
-    if (m_deadlock_test_packets_delivered == expected) {
-        std::ofstream log("m5out/deadlock.log", std::ios::app);
-        log << "[DEADLOCK FULL RECOVERY COMPLETE] tick=" << tick
-            << " packets=" << m_deadlock_test_packets_delivered;
-        if (m_deadlock_test_detection_tick > 0) {
-            log << " recovery_latency_cycles="
-                << (tick - m_deadlock_test_detection_tick) / clock_period;
-        }
-        log << std::endl;
-    }
 }
 
 /*
@@ -708,6 +690,19 @@ GarnetNetwork::regStats()
     m_health_candidate_tie_rate =
         m_health_candidate_ties / m_health_candidate_sets;
 
+    m_har_decisions.name(name() + ".har_decisions")
+        .desc("Packet-head HAR decisions at the original destination gateway");
+    m_har_redirects.name(name() + ".har_redirects")
+        .desc("Packet heads redirected by HAR to a peer uplink");
+    m_ipdr_priority_grants.name(name() + ".ipdr_priority_grants")
+        .desc("Inter-chiplet flits granted by the IPDR priority pass");
+    m_ipdr_recovery_entries.name(name() + ".ipdr_recovery_entries")
+        .desc("Entries into the existing simplified IPDR recovery state");
+    m_ipdr_recovery_finishes.name(name() + ".ipdr_recovery_finishes")
+        .desc("Exits from the existing simplified IPDR recovery state");
+    m_uhaf_escape_absorptions.name(name() + ".uhaf_escape_absorptions")
+        .desc("Packets selected for UHAF escape absorption (zero for IPDR)");
+
     // Links
     m_total_ext_in_link_utilization
         .name(name() + ".ext_in_link_utilization");
@@ -943,6 +938,7 @@ GarnetNetwork::ipdrEnterRecovery(int boundary_idx)
     assert(boundary_idx >= 0 &&
            boundary_idx < static_cast<int>(m_ipdr_state.size()));
     m_ipdr_state[boundary_idx] = IPDR_RECOVERY;
+    m_ipdr_recovery_entries++;
     m_ipdr_global_recovery = true;
 }
 
@@ -951,6 +947,7 @@ GarnetNetwork::ipdrFinishRecovery(int boundary_idx)
 {
     assert(boundary_idx >= 0 &&
            boundary_idx < static_cast<int>(m_ipdr_state.size()));
+    m_ipdr_recovery_finishes++;
     m_ipdr_state[boundary_idx] = IPDR_IDLE;
     m_ipdr_dd_counter[boundary_idx] = 0;
     m_ipdr_buffer_used[boundary_idx] = 0;

@@ -202,6 +202,13 @@ class InputUnit : public Consumer
     int getVcBufferSize(int vc) { return virtualChannels[vc].getBufferSize(); }
     Tick getVcStallCycles(int vc) { return m_vc_stall_cycles.empty() ? 0 : m_vc_stall_cycles[vc]; }
     Tick getVcMaxStall(int vc) { return m_vc_max_stall.empty() ? 0 : m_vc_max_stall[vc]; }
+    void resetStallObservation() {
+        m_prev_vc_size.resize(virtualChannels.size());
+        m_vc_stall_cycles.assign(virtualChannels.size(), 0);
+        m_vc_max_stall.assign(virtualChannels.size(), 0);
+        for (unsigned v = 0; v < virtualChannels.size(); ++v)
+            m_prev_vc_size[v] = virtualChannels[v].getBufferSize();
+    }
 
   private:
     Router *m_router;

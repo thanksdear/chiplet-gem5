@@ -74,6 +74,12 @@ class Router : public BasicRouter, public Consumer
     ~Router() = default;
 
     void wakeup();
+    void armDeadlockTest();
+    bool isEscapeAbsorbing(int inport, int vc) const {
+        auto it = m_escape_buffers.find(inport);
+        return it != m_escape_buffers.end() && it->second->isAbsorbing() &&
+               it->second->getSourceVc() == vc;
+    }
     void print(std::ostream& out) const {};
 
     void init();

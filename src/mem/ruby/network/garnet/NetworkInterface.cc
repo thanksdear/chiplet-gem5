@@ -169,6 +169,8 @@ NetworkInterface::incrementStats(flit *t_flit)
     m_net_ptr->increment_flit_queueing_latency(queueing_delay, vnet);
 
     if (t_flit->get_type() == TAIL_ || t_flit->get_type() == HEAD_TAIL_) {
+        // Includes tails accepted immediately and tails in the stall queue.
+        m_net_ptr->recordDeadlockTestPacketDelivery(t_flit, clockPeriod());
         m_net_ptr->increment_received_packets(vnet);
         m_net_ptr->increment_packet_network_latency(network_delay, vnet);
         m_net_ptr->increment_packet_queueing_latency(queueing_delay, vnet);
@@ -234,6 +236,7 @@ NetworkInterface::wakeup()
             assert(t_flit->m_width == iPort->bitWidth());
 
             int vnet = t_flit->get_vnet();
+            m_net_ptr->recordDeadlockTestFlit(t_flit, m_id);
             t_flit->set_dequeue_time(curTick());
 
             // If a tail flit is received, enqueue into the protocol buffers
@@ -243,25 +246,6 @@ NetworkInterface::wakeup()
                 t_flit->get_type() == HEAD_TAIL_) {
                 if (!iPort->messageEnqueuedThisCycle &&
                     outNode_ptr[vnet]->areNSlotsAvailable(1, curTime)) {
-                    if (t_flit->is_recovery()) {
-                        std::ofstream log("m5out/deadlock.log",
-                                          std::ios::app);
-                        const RouteInfo route = t_flit->get_route();
-                        log << "[RECOVERED PACKET DELIVERED] tick="
-                            << curTick()
-                            << " src_router=" << route.src_router
-                            << " dest_router=" << route.dest_router
-                            << " hops=" << route.hops_traversed;
-                        const Tick detected =
-                            m_net_ptr->getDeadlockTestDetectionTick();
-                        if (detected > 0) {
-                            log << " recovery_latency_cycles="
-                                << (curTick() - detected) / clockPeriod();
-                        }
-                        log << std::endl;
-                    }
-                    m_net_ptr->recordDeadlockTestPacketDelivery(
-                        curTick(), clockPeriod());
                     // Space is available. Enqueue to protocol buffer.
                     outNode_ptr[vnet]->enqueue(t_flit->get_msg_ptr(), curTime,
                                                cyclesToTicks(Cycles(1)));
@@ -483,6 +467,8 @@ NetworkInterface::flitisizeMessage(MsgPtr msg_ptr, int vnet)
 
         m_net_ptr->increment_injected_packets(vnet);
         m_net_ptr->update_traffic_distribution(route);
+        const int validation_packet =
+            m_net_ptr->registerDeadlockTestPacket(route, num_flits);
         for (int i = 0; i < num_flits; i++) {
             m_net_ptr->increment_injected_flits(vnet);
             flit *fl = new flit(i, vc, vnet, route, num_flits, new_msg_ptr,
@@ -491,6 +477,7 @@ NetworkInterface::flitisizeMessage(MsgPtr msg_ptr, int vnet)
                 oPort->bitWidth(), curTick());
 
             fl->set_src_delay(curTick() - msg_ptr->getTime());
+            fl->set_validation_packet(validation_packet);
             // IPDR: mark inter-chiplet flits for priority arbitration
             const int routers_per_chiplet = static_cast<int>(
                 m_net_ptr->getRoutersPerChiplet());

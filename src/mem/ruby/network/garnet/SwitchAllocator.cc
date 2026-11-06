@@ -186,6 +186,7 @@ SwitchAllocator::arbitrate_outports()
                         ->peekTopFlit(vc);
                     if (f->is_inter_chiplet()) {
                         winner_inport = ip;
+                        m_router->get_net_ptr()->recordIpdrPriorityGrant();
                         break;
                     }
                 }
@@ -303,6 +304,11 @@ SwitchAllocator::arbitrate_outports()
 bool
 SwitchAllocator::send_allowed(int inport, int invc, int outport, int outvc)
 {
+    // Escape capture owns the entire packet until its real TAIL arrives.
+    // Once another VC drains, normal allocation may become possible again;
+    // it must not take BODY/TAIL flits from a packet being absorbed.
+    if (m_router->isEscapeAbsorbing(inport, invc))
+        return false;
     // Check if outvc needed
     // Check if credit needed (for multi-flit packet)
     // Check if ordering violated (in ordered vnet)

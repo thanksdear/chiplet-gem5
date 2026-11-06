@@ -88,6 +88,7 @@ flit::serialize(int ser_id, int parts, uint32_t bWidth)
     fl->set_src_delay(src_delay);
     fl->set_escape_reinjected(m_escape_reinjected);
     fl->set_recovery(m_recovery);
+    fl->set_validation_packet(m_validation_packet);
     return fl;
 }
 
@@ -105,6 +106,7 @@ flit::deserialize(int des_id, int num_flits, uint32_t bWidth)
     fl->set_src_delay(src_delay);
     fl->set_escape_reinjected(m_escape_reinjected);
     fl->set_recovery(m_recovery);
+    fl->set_validation_packet(m_validation_packet);
     return fl;
 }
 

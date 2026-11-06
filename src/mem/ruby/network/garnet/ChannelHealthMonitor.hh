@@ -73,6 +73,13 @@ class ChannelHealthMonitor
 
     // Get max stall duration observed (ticks)
     Tick getMaxStallTicks() const;
+    // Test arming discards staging-time history, retaining real credits.
+    void resetObservation(Tick tick) {
+        m_last_credit_change_time = tick;
+        m_last_broadcast_time = tick;
+        m_last_broadcast_score = m_max_score;
+        m_max_stall_observed = 0;
+    }
 
   private:
     // Component 1: credit occupancy ratio C_free / C_total

@@ -39,6 +39,7 @@ SimObject('GarnetNetwork.py', sim_objects=[
 
 Source('GarnetLink.cc')
 Source('GarnetNetwork.cc')
+Source('DeadlockValidation.cc')
 Source('InputUnit.cc')
 Source('NetworkInterface.cc')
 Source('NetworkLink.cc')

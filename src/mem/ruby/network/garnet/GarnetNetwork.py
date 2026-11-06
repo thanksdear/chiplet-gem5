@@ -47,6 +47,8 @@ class GarnetNetwork(RubyNetwork):
     routing_algorithm = Param.Int(0,
         "0: Table, 1: XY, 2: Custom, 3: Chiplet XY, 4: Adaptive, "
         "5: MTR, 6: RC, 7: IPDR, 8: LBDR-lite");
+    ipdr_har_enabled = Param.Bool(False,
+        "add HAR uplink selection to IPDR without UHAF escape recovery")
     num_chiplets = Param.UInt32(4,
         "number of chiplets in the scalable 2.5D topology")
     chiplet_mesh_rows = Param.UInt32(2,
@@ -70,6 +72,8 @@ class GarnetNetwork(RubyNetwork):
                               "enable deterministic UHAF VC-cycle test")
     deadlock_test_rings = Param.UInt32(1,
                               "number of simultaneous deterministic rings")
+    deadlock_test_disable_recovery = Param.Bool(False,
+                              "negative control: detect but do not recover")
     deadlock_partial_packet = Param.Bool(False,
                               "hold victim body/tail flits upstream")
     deadlock_partial_tail_delay = Param.UInt32(520,

@@ -61,6 +61,7 @@ class NetworkInterface;
 class Router;
 class NetworkLink;
 class CreditLink;
+class flit;
 
 class GarnetNetwork : public Network
 {
@@ -84,6 +85,11 @@ class GarnetNetwork : public Network
     uint32_t getBuffersPerDataVC() { return m_buffers_per_data_vc; }
     uint32_t getBuffersPerCtrlVC() { return m_buffers_per_ctrl_vc; }
     int getRoutingAlgorithm() const { return m_routing_algorithm; }
+    bool isIpdrHarEnabled() const { return m_ipdr_har_enabled; }
+    // IPDR and IPDR+HAR share the IPDR recovery model. HAR only changes
+    // the routing decision; it must not also enable UHAF escape recovery.
+    bool usesUhafEscapeRecovery() const
+    { return m_routing_algorithm != IPDR_; }
     uint32_t getNumChiplets() const { return m_num_chiplets; }
     uint32_t getChipletMeshRows() const { return m_chiplet_mesh_rows; }
     uint32_t getChipletMeshCols() const { return m_chiplet_mesh_cols; }
@@ -117,8 +123,16 @@ class GarnetNetwork : public Network
     { return m_deadlock_test_formation_tick; }
     Tick getDeadlockTestDetectionTick() const
     { return m_deadlock_test_detection_tick; }
-    void recordDeadlockTestDetection(Tick tick);
-    void recordDeadlockTestPacketDelivery(Tick tick, Tick clock_period);
+    bool isDeadlockTestRecoveryDisabled() const
+    { return m_deadlock_test_disable_recovery; }
+    void recordDeadlockTestDetection(int router_id, Tick tick);
+    int registerDeadlockTestPacket(const RouteInfo &route, int flits);
+    void recordDeadlockTestFlit(flit *f, int dest_ni);
+    void recordDeadlockTestPacketDelivery(flit *f, Tick clock_period);
+    void recordDeadlockTestCycleBreak(int router_id, Tick tick);
+    void observeDeadlockTest();
+    bool verifyDeadlockTestCycle(int ring, const char *phase);
+    void writeDeadlockTestSummary();
     uint32_t getEscapeBufferDepth() const
     { return m_escape_buffer_depth; }
     bool holdDeadlockTestHead(int source_router, int router_id,
@@ -188,6 +202,11 @@ class GarnetNetwork : public Network
         if (tied)
             m_health_candidate_ties++;
     }
+
+    void recordHarDecision() { m_har_decisions++; }
+    void recordHarRedirect() { m_har_redirects++; }
+    void recordIpdrPriorityGrant() { m_ipdr_priority_grants++; }
+    void recordUhafEscapeAbsorption() { m_uhaf_escape_absorptions++; }
 
     // increment counters
     void increment_injected_packets(int vnet) { m_packets_injected[vnet]++; }
@@ -292,12 +311,14 @@ class GarnetNetwork : public Network
     uint32_t m_buffers_per_ctrl_vc;
     uint32_t m_buffers_per_data_vc;
     int m_routing_algorithm;
+    bool m_ipdr_har_enabled;
     uint32_t m_num_chiplets;
     uint32_t m_chiplet_mesh_rows;
     uint32_t m_chiplet_mesh_cols;
     std::vector<int> m_lbdr_gateway_map;
     uint32_t m_interposer_stall_threshold;
     bool m_deadlock_test_enabled;
+    bool m_deadlock_test_disable_recovery;
     uint32_t m_deadlock_test_rings;
     bool m_deadlock_partial_packet;
     uint32_t m_deadlock_partial_tail_delay;
@@ -349,6 +370,12 @@ class GarnetNetwork : public Network
     statistics::Scalar m_health_candidate_sets;
     statistics::Scalar m_health_candidate_ties;
     statistics::Formula m_health_candidate_tie_rate;
+    statistics::Scalar m_har_decisions;
+    statistics::Scalar m_har_redirects;
+    statistics::Scalar m_ipdr_priority_grants;
+    statistics::Scalar m_ipdr_recovery_entries;
+    statistics::Scalar m_ipdr_recovery_finishes;
+    statistics::Scalar m_uhaf_escape_absorptions;
 
     std::vector<std::vector<statistics::Scalar *>> m_data_traffic_distribution;
     std::vector<std::vector<statistics::Scalar *>> m_ctrl_traffic_distribution;
@@ -385,6 +412,27 @@ class GarnetNetwork : public Network
     Tick m_deadlock_test_formation_tick = 0;
     Tick m_deadlock_test_detection_tick = 0;
     uint32_t m_deadlock_test_packets_delivered = 0;
+    struct ValidationRing
+    {
+        bool verified = false;
+        Tick detected = 0;
+        Tick broken = 0;
+        Tick drained = 0;
+        unsigned delivered = 0;
+        unsigned detection_events = 0;
+    };
+    struct ValidationPacket
+    {
+        RouteInfo route;
+        int flits;
+        unsigned sequence;
+        int received = 0;
+        bool delivered = false;
+    };
+    std::vector<ValidationRing> m_validation_rings;
+    std::vector<ValidationPacket> m_validation_packets;
+    Tick m_validation_last_sample = 0;
+    uint64_t m_validation_flow_inversions = 0;
 };
 
 inline std::ostream&

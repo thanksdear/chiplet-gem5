@@ -215,8 +215,12 @@ RoutingUnit::outportCompute(RouteInfo route, int inport,
             outportComputeMTR(route, inport, inport_dirn); break;
         case RC_: outport =
             outportComputeChipletXY(route, inport, inport_dirn); break;
-        case IPDR_: outport =
-            outportComputeChipletXY(route, inport, inport_dirn); break;
+        case IPDR_:
+            outport = m_router->get_net_ptr()->isIpdrHarEnabled()
+                ? outportComputeAdaptiveChipletXY(
+                    route, inport, inport_dirn, t_flit)
+                : outportComputeChipletXY(route, inport, inport_dirn);
+            break;
         case LBDR_: outport =
             outportComputeLBDR(route, inport, inport_dirn); break;
         default: outport =
@@ -753,6 +757,7 @@ RoutingUnit::outportComputeAdaptiveChipletXY(RouteInfo route,
 
         if (target_ir == my_id) {
             m_router->incrArcAtTarget();
+            m_router->get_net_ptr()->recordHarDecision();
 
             // Check Up health using average score.  The two severity limits
             // preserve the original 3-bit boundaries (2/7 and 4/7) for all
@@ -887,6 +892,7 @@ RoutingUnit::outportComputeAdaptiveChipletXY(RouteInfo route,
             if (best_id >= 0) {
                 // Redirect to better neighbor
                 m_router->incrArcRedirected();
+                m_router->get_net_ptr()->recordHarRedirect();
                 int best_ix, best_iy;
                 interposer_xy(best_id, best_ix, best_iy);
                 PortDirection dirn = xy_dirn(
