@@ -7,15 +7,12 @@
 在服务器已有仓库的根目录执行。先确认 `git status`，保留服务器上尚未提交的修改：
 
 ```bash
-git fetch origin
-git switch --track origin/experiment/ipdr-har
+git checkout main
+git pull --ff-only origin main
 scons build/Garnet_standalone/gem5.opt -j2
 ```
 
-如果服务器 Git 版本没有 `switch`，可使用
-`git checkout -b experiment/ipdr-har origin/experiment/ipdr-har`。
-分支已存在时先切换到该分支，再使用 `git pull --ff-only`。
-必须重新编译，旧二进制不包含新增参数和统计。
+代码更新在原仓库 `main` 分支。必须重新编译，旧二进制不包含新增参数和统计。
 
 ## 开启方式
 
